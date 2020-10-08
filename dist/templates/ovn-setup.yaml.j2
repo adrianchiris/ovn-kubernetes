@@ -88,6 +88,11 @@ rules:
   - customresourcedefinitions
   verbs: ["list", "get", "watch"]
 - apiGroups:
+  - k8s.cni.cncf.io
+  resources:
+  - network-attachment-definitions
+  verbs: ["list", "get", "watch"]
+- apiGroups:
   - k8s.ovn.org
   resources:
   - icmpnetworkpolicies
@@ -104,6 +109,7 @@ rules:
   - subjectaccessreviews
   verbs:
   - create
+
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
