@@ -57,4 +57,9 @@ const (
 	NeighborAdvertisementICMPType = 136
 
 	OvnACLLoggingMeter = "acl-logging"
+
+	// OVNKube-Node Node types
+	NodeModeFull         = "full"
+	NodeModeSmartNIC     = "smart-nic"
+	NodeModeSmartNICHost = "smart-nic-host"
 )

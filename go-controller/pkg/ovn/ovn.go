@@ -456,10 +456,6 @@ func (oc *Controller) ovnControllerEventChecker() {
 	}
 }
 
-func podScheduled(pod *kapi.Pod) bool {
-	return pod.Spec.NodeName != ""
-}
-
 func (oc *Controller) recordPodEvent(addErr error, pod *kapi.Pod) {
 	podRef, err := ref.GetReference(scheme.Scheme, pod)
 	if err != nil {

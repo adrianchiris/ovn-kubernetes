@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/types"
 	"io/ioutil"
 	"net"
 	"os"
@@ -11,14 +12,6 @@ import (
 	"sync"
 	"time"
 
-	honode "github.com/ovn-org/ovn-kubernetes/go-controller/hybrid-overlay/pkg/controller"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/cni"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/factory"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/informer"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
-
 	kapi "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -26,6 +19,14 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+
+	honode "github.com/ovn-org/ovn-kubernetes/go-controller/hybrid-overlay/pkg/controller"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/cni"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/factory"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/informer"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 )
 
 // OvnNode is the object holder for utilities meant for node management
@@ -162,6 +163,9 @@ func (n *OvnNode) Start(wg *sync.WaitGroup) error {
 	var err error
 	var node *kapi.Node
 	var subnets []*net.IPNet
+	var mgmtPortConfig *managementPortConfig
+
+	klog.Infof("OVN Kube Node initialization, Mode: %s", config.OvnKubeNode.Mode)
 
 	// Setting debug log level during node bring up to expose bring up process.
 	// Log level is returned to configured value when bring up is complete.
@@ -170,18 +174,21 @@ func (n *OvnNode) Start(wg *sync.WaitGroup) error {
 		klog.Errorf("Setting klog \"loglevel\" to 5 failed, err: %v", err)
 	}
 
-	for _, auth := range []config.OvnAuthConfig{config.OvnNorth, config.OvnSouth} {
-		if err := auth.SetDBAuth(); err != nil {
-			return err
-		}
-	}
-
 	if node, err = n.Kube.GetNode(n.name); err != nil {
 		return fmt.Errorf("error retrieving node %s: %v", n.name, err)
 	}
-	err = setupOVNNode(node)
-	if err != nil {
-		return err
+
+	if config.OvnKubeNode.Mode != types.NodeModeSmartNICHost {
+		for _, auth := range []config.OvnAuthConfig{config.OvnNorth, config.OvnSouth} {
+			if err := auth.SetDBAuth(); err != nil {
+				return err
+			}
+		}
+
+		err = setupOVNNode(node)
+		if err != nil {
+			return err
+		}
 	}
 
 	// First wait for the node logical switch to be created by the Master, timeout is 300s.
@@ -201,40 +208,44 @@ func (n *OvnNode) Start(wg *sync.WaitGroup) error {
 		return fmt.Errorf("timed out waiting for node's: %q logical switch: %v", n.name, err)
 	}
 
-	klog.Infof("Node %s ready for ovn initialization with subnet %s", n.name, util.JoinIPNets(subnets, ","))
+	if config.OvnKubeNode.Mode != types.NodeModeSmartNICHost {
+		klog.Infof("Node %s ready for ovn initialization with subnet %s", n.name, util.JoinIPNets(subnets, ","))
 
-	if _, err = isOVNControllerReady(n.name); err != nil {
-		return err
+		if _, err = isOVNControllerReady(n.name); err != nil {
+			return err
+		}
+
+		nodeAnnotator := kube.NewNodeAnnotator(n.Kube, node)
+		waiter := newStartupWaiter()
+
+		// Initialize management port resources on the node
+		mgmtPortConfig, err = createManagementPort(n.name, subnets, nodeAnnotator, waiter)
+		if err != nil {
+			return err
+		}
+
+		// Initialize gateway resources on the node
+		if err := n.initGateway(subnets, nodeAnnotator, waiter, mgmtPortConfig); err != nil {
+			return err
+		}
+
+		if err := nodeAnnotator.Run(); err != nil {
+			return fmt.Errorf("failed to set node %s annotations: %v", n.name, err)
+		}
+		go n.gateway.Run(n.stopChan, wg)
+
+
+		// Wait for management port and gateway resources to be created by the master
+		klog.Infof("Waiting for gateway and management port readiness...")
+		start := time.Now()
+		if err := waiter.Wait(); err != nil {
+			return err
+		}
+		klog.Infof("Gateway and management port readiness took %v", time.Since(start))
 	}
-
-	nodeAnnotator := kube.NewNodeAnnotator(n.Kube, node)
-	waiter := newStartupWaiter()
-
-	// Initialize management port resources on the node
-	mgmtPortConfig, err := createManagementPort(n.name, subnets, nodeAnnotator, waiter)
-	if err != nil {
-		return err
-	}
-
-	// Initialize gateway resources on the node
-	if err := n.initGateway(subnets, nodeAnnotator, waiter, mgmtPortConfig); err != nil {
-		return err
-	}
-
-	if err := nodeAnnotator.Run(); err != nil {
-		return fmt.Errorf("failed to set node %s annotations: %v", n.name, err)
-	}
-
-	// Wait for management port and gateway resources to be created by the master
-	klog.Infof("Waiting for gateway and management port readiness...")
-	start := time.Now()
-	if err := waiter.Wait(); err != nil {
-		return err
-	}
-	go n.gateway.Run(n.stopChan, wg)
-	klog.Infof("Gateway and management port readiness took %v", time.Since(start))
 
 	if config.HybridOverlay.Enabled {
+		// Not supported with Smart-NIC, enforced in config
 		nodeController, err := honode.NewNode(
 			n.Kube,
 			n.name,
@@ -256,25 +267,41 @@ func (n *OvnNode) Start(wg *sync.WaitGroup) error {
 		klog.Errorf("Reset of initial klog \"loglevel\" failed, err: %v", err)
 	}
 
-	// start health check to ensure there are no stale OVS internal ports
-	go checkForStaleOVSInterfaces(n.stopChan)
+	if config.OvnKubeNode.Mode != types.NodeModeSmartNICHost {
+		// start health check to ensure there are no stale OVS internal ports
+		go checkForStaleOVSInterfaces(n.stopChan)
 
-	// start management port health check
-	go checkManagementPortHealth(mgmtPortConfig, n.stopChan)
+		// start management port health check
+		go checkManagementPortHealth(mgmtPortConfig, n.stopChan)
 
-	confFile := filepath.Join(config.CNI.ConfDir, config.CNIConfFileName)
-	_, err = os.Stat(confFile)
-	if os.IsNotExist(err) {
-		err = config.WriteCNIConfig()
-		if err != nil {
-			return err
+		n.WatchEndpoints()
+	}
+
+	if config.OvnKubeNode.Mode != types.NodeModeSmartNIC {
+		confFile := filepath.Join(config.CNI.ConfDir, config.CNIConfFileName)
+		_, err = os.Stat(confFile)
+		if os.IsNotExist(err) {
+			err = config.WriteCNIConfig()
+			if err != nil {
+				return err
+			}
 		}
 	}
 
-	n.WatchEndpoints()
-
-	cniServer := cni.NewCNIServer("", n.watchFactory)
-	err = cniServer.Start(cni.HandleCNIRequest)
+	if config.OvnKubeNode.Mode == types.NodeModeSmartNIC {
+		n.watchSmartNicPods()
+	} else {
+		// start the cni server
+		kclient, ok := n.Kube.(*kube.Kube)
+		if !ok {
+			return fmt.Errorf("cannot get kubeclient for starting CNI server")
+		}
+		var cniServer *cni.Server
+		cniServer, err = cni.NewCNIServer("", n.watchFactory, kclient.KClient, config.OvnKubeNode.Mode)
+		if err == nil {
+			err = cniServer.Start(cni.HandleCNIRequest)
+		}
+	}
 
 	return err
 }
@@ -334,4 +361,189 @@ func buildEndpointAddressMap(epSubsets []kapi.EndpointSubset) map[epAddressItem]
 	}
 
 	return epMap
+}
+
+//watchSmartNicPods watch updates for pod smart nic annotations
+func (n *OvnNode) watchSmartNicPods() {
+	var retryPods sync.Map
+	// servedPods tracks the pods that got a VF
+	var servedPods sync.Map
+	_ = n.watchFactory.AddPodHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			pod := obj.(*kapi.Pod)
+			klog.Infof("AddFunc for POD: %s/%s", pod.ObjectMeta.GetNamespace(), pod.ObjectMeta.GetName())
+			if !util.PodWantsNetwork(pod) || pod.Status.Phase == kapi.PodRunning {
+				return
+			}
+			if util.PodScheduled(pod) {
+				// Is this pod created on same node where the smart NIC
+				if n.name != pod.Spec.NodeName {
+					return
+				}
+
+				vfRepName, err := n.getVfRepName(pod)
+				if err != nil {
+					klog.Infof("Failed to get rep name, %s. retrying", err)
+					retryPods.Store(pod.UID, true)
+					return
+				}
+				podInterfaceInfo, err := cni.PodAnnotation2PodInfo(pod.Annotations)
+				if err != nil {
+					retryPods.Store(pod.UID, true)
+					return
+				}
+				err = n.addRepPort(pod, vfRepName, podInterfaceInfo)
+				if err != nil {
+					klog.Infof("Failed to add rep port, %s. retrying", err)
+					retryPods.Store(pod.UID, true)
+				} else {
+					servedPods.Store(pod.UID, true)
+				}
+			} else {
+				// Handle unscheduled pods later in UpdateFunc
+				retryPods.Store(pod.UID, true)
+				return
+			}
+		},
+		UpdateFunc: func(old, newer interface{}) {
+			pod := newer.(*kapi.Pod)
+			klog.Infof("UpdateFunc for POD: %s/%s", pod.ObjectMeta.GetNamespace(), pod.ObjectMeta.GetName())
+			if !util.PodWantsNetwork(pod) || pod.Status.Phase == kapi.PodRunning {
+				retryPods.Delete(pod.UID)
+				return
+			}
+			_, retry := retryPods.Load(pod.UID)
+			if util.PodScheduled(pod) && retry {
+				if n.name != pod.Spec.NodeName {
+					retryPods.Delete(pod.UID)
+					return
+				}
+				vfRepName, err := n.getVfRepName(pod)
+				if err != nil {
+					klog.Infof("Failed to get rep name, %s. retrying", err)
+					retryPods.Store(pod.UID, true)
+					return
+				}
+				podInterfaceInfo, err := cni.PodAnnotation2PodInfo(pod.Annotations)
+				if err != nil {
+					retryPods.Store(pod.UID, true)
+					return
+				}
+				err = n.addRepPort(pod, vfRepName, podInterfaceInfo)
+				if err != nil {
+					klog.Infof("Failed to add rep port, %s. retrying", err)
+					retryPods.Store(pod.UID, true)
+				} else {
+					servedPods.Store(pod.UID, true)
+					retryPods.Delete(pod.UID)
+				}
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			pod := obj.(*kapi.Pod)
+			klog.Infof("DeleteFunc for POD: %s/%s", pod.ObjectMeta.GetNamespace(), pod.ObjectMeta.GetName())
+			if _, ok := servedPods.Load(pod.UID); !ok {
+				return
+			}
+			servedPods.Delete(pod.UID)
+			retryPods.Delete(pod.UID)
+			vfRepName, err := n.getVfRepName(pod)
+			if err != nil {
+				klog.Errorf("Failed to get VF Representor Name from Pod: %s. Representor port may have been deleted.", err)
+				return
+			}
+			err = n.delRepPort(vfRepName)
+			if err != nil {
+				klog.Infof("Failed to delete VF representor %s. %s", vfRepName, err)
+			}
+		},
+	}, nil)
+}
+
+// getVfRepName returns the VF's representor of the VF assigned to the pod
+func (n *OvnNode) getVfRepName(pod *kapi.Pod) (string, error) {
+	smartNicCD := util.SmartNICConnectionDetails{}
+	if err := smartNicCD.FromPodAnnotation(pod); err != nil {
+		return "", fmt.Errorf("failed to get smart-nic annotation. %v", err)
+	}
+	return util.GetSriovnetOps().GetVfRepresentorSmartNIC(smartNicCD.PfId, smartNicCD.VfId)
+}
+
+// addRepPort adds the representor of the VF to the ovs bridge
+func (n *OvnNode) addRepPort(pod *kapi.Pod, vfRepName string, ifInfo *cni.PodInterfaceInfo) error {
+	klog.Infof("addRepPort: %s", vfRepName)
+	smartNicCD := util.SmartNICConnectionDetails{}
+	if err := smartNicCD.FromPodAnnotation(pod); err != nil {
+		return fmt.Errorf("failed to get smart-nic annotation. %v", err)
+	}
+
+	err := cni.ConfigureOVS(pod.Namespace, pod.Name, vfRepName, ifInfo, smartNicCD.SandboxId)
+	if err != nil {
+		return err
+	}
+	klog.Infof("Port %s added to bridge br-int", vfRepName)
+
+	link, err := util.GetNetLinkOps().LinkByName(vfRepName)
+	if err != nil {
+		// Note(adrianc): we are lenient with cleanup in this method as pod is going to be retried anyway.
+		_ = n.delRepPort(vfRepName)
+		return fmt.Errorf("failed to get link device for interface %s", vfRepName)
+	}
+
+	klog.Infof("addRepPort: set link mtu %s", vfRepName)
+	if err = util.GetNetLinkOps().LinkSetMTU(link, ifInfo.MTU); err != nil {
+		_ = n.delRepPort(vfRepName)
+		return fmt.Errorf("failed to setup representor port. failed to set MTU for interface %s", vfRepName)
+	}
+
+	klog.Infof("addRepPort: set link up for %s", vfRepName)
+	if err = util.GetNetLinkOps().LinkSetUp(link); err != nil {
+		_ = n.delRepPort(vfRepName)
+		return fmt.Errorf("failed to setup representor port. failed to set link up for interface %s", vfRepName)
+	}
+
+	// Update connection-status annotation
+	connStatus := util.SmartNICConnectionStatus{Status: util.SmartNicConnectionStatusReady, Reason: ""}
+	podAnnotator := kube.NewPodAnnotator(n.Kube, pod)
+	err = connStatus.SetPodAnnotation(podAnnotator)
+	if err != nil {
+		// we should not get here
+		_ = util.GetNetLinkOps().LinkSetDown(link)
+		_ = n.delRepPort(vfRepName)
+		return fmt.Errorf("failed to setup representor port. failed to set pod annotations. %v", err)
+	}
+
+	err = podAnnotator.Run()
+	if err != nil {
+		// cleanup
+		_ = util.GetNetLinkOps().LinkSetDown(link)
+		_ = n.delRepPort(vfRepName)
+		return fmt.Errorf("failed to setup representor port. failed to set pod annotations. %v", err)
+	}
+	return nil
+}
+
+// delRepPort delete the representor of the VF from the ovs bridge
+func (n *OvnNode) delRepPort(vfRepName string) error {
+	//TODO(adrianc): handle: clearPodBandwidth(pr.SandboxID), pr.deletePodConntrack()
+	klog.Infof("delRepPort: %s", vfRepName)
+	// Set link down for representor port
+	link, err := util.GetNetLinkOps().LinkByName(vfRepName)
+	if err != nil {
+		klog.Warningf("Failed to get link device for representor port %s. %v", vfRepName, err)
+	} else {
+		if linkDownErr := util.GetNetLinkOps().LinkSetDown(link); linkDownErr != nil {
+			klog.Warningf("Failed to set link down for representor port %s. %v", vfRepName, linkDownErr)
+		}
+	}
+	klog.Infof("Port %s link state set to \"down\"", vfRepName)
+	// remove from br-int
+	return wait.PollImmediate(500*time.Millisecond, 60*time.Second, func() (bool, error) {
+		_, _, err := util.RunOVSVsctl("--if-exists", "del-port", "br-int", vfRepName)
+		if err != nil {
+			return false, nil
+		}
+		klog.Infof("Port %s deleted from bridge br-int", vfRepName)
+		return true, nil
+	})
 }

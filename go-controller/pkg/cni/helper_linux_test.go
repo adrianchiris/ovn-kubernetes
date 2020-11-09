@@ -425,15 +425,15 @@ func TestSetupInterface(t *testing.T) {
 func TestSetupSriovInterface(t *testing.T) {
 	mockNetLinkOps := new(util_mocks.NetLinkOps)
 	mockCNIPlugin := new(mocks.CNIPluginLibOps)
-	mockSriovNetLibOps := new(mocks.SriovNetLibOps)
+	mockSriovnetOps := new(util_mocks.SriovnetOps)
 	mockNS := new(cni_ns_mocks.NetNS)
 	mockLink := new(netlink_mocks.Link)
 	// below sets the `netLinkOps` in util/net_linux.go to a mock instance for purpose of unit tests execution
 	util.SetNetLinkOpMockInst(mockNetLinkOps)
 	// `cniPluginLibOps` is defined in helper_linux.go
 	cniPluginLibOps = mockCNIPlugin
-	// `sriovLibOps` is defined in helper_linux.go
-	sriovLibOps = mockSriovNetLibOps
+	// set `sriovnetOps` in util/sriovnet_linux.go to a mock instance for unit tests execution
+	util.SetSriovnetOpsInst(mockSriovnetOps)
 
 	res, err := sriovnet.GetUplinkRepresentor("0000:01:00.0")
 	t.Log(res, err)
@@ -720,7 +720,7 @@ func TestSetupSriovInterface(t *testing.T) {
 			mockNetLinkOps.AssertExpectations(t)
 			mockCNIPlugin.AssertExpectations(t)
 			mockNS.AssertExpectations(t)
-			mockSriovNetLibOps.AssertExpectations(t)
+			mockSriovnetOps.AssertExpectations(t)
 			mockLink.AssertExpectations(t)
 		})
 	}

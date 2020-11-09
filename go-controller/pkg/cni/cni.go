@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"k8s.io/client-go/kubernetes"
 	"net"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
 )
 
 var minRsrc = resource.MustParse("1k")
@@ -63,18 +65,30 @@ func (pr *PodRequest) String() string {
 	return fmt.Sprintf("[%s/%s %s]", pr.PodNamespace, pr.PodName, pr.SandboxID)
 }
 
-func (pr *PodRequest) cmdAdd(podLister corev1listers.PodLister) ([]byte, error) {
+func (pr *PodRequest) cmdAdd(podLister corev1listers.PodLister, kclient kubernetes.Interface) ([]byte, error) {
 	namespace := pr.PodNamespace
 	podName := pr.PodName
 	if namespace == "" || podName == "" {
 		return nil, fmt.Errorf("required CNI variable missing")
 	}
 
-	// Get the IP address and MAC address of the pod
-	annotations, err := getPodAnnotations(pr.ctx, podLister, pr.PodNamespace, pr.PodName)
-	if err != nil {
-		return nil, err
+	kubecli := &kube.Kube{KClient: kclient}
+
+	if pr.IsSmartNIC {
+		// Add Smart-NIC connection-details annotation so ovnkube-node running on smart-NIC
+		// performs the needed network plumbing.
+		if err := pr.addSmartNICConnectionDetailsAnnot(kubecli); err != nil {
+			return nil, err
+		}
 	}
+	// Get the IP address and MAC address of the pod
+	// for Smart-Nic, ensure connection-details is present
+	annotations, err := GetPodAnnotationsWithBackoff(kubecli, namespace, podName, pr.IsSmartNIC)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pod annotation: %v", err)
+	}
+
+	// TODO(adrianc): ensure plumbing was completed successfully on smart-NIC by checking smartnic.connection-details
 
 	podInfo, err := util.UnmarshalPodAnnotation(annotations)
 	if err != nil {
@@ -90,6 +104,7 @@ func (pr *PodRequest) cmdAdd(podLister corev1listers.PodLister) ([]byte, error) 
 		MTU:           config.Default.MTU,
 		Ingress:       ingress,
 		Egress:        egress,
+		IsSmartNic:    pr.IsSmartNIC,
 	}
 	response := &Response{}
 	if !config.UnprivilegedMode {
@@ -110,6 +125,11 @@ func (pr *PodRequest) cmdAdd(podLister corev1listers.PodLister) ([]byte, error) 
 }
 
 func (pr *PodRequest) cmdDel() ([]byte, error) {
+	if pr.IsSmartNIC {
+		// nothing to do
+		return []byte{}, nil
+	}
+
 	if err := pr.PlatformSpecificCleanup(); err != nil {
 		return nil, err
 	}
