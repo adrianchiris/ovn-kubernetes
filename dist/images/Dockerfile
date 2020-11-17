@@ -14,7 +14,7 @@ COPY kubernetes.repo /etc/yum.repos.d/kubernetes.repo
 # install epel.repo
 RUN yum install -y epel-release
 RUN INSTALL_PKGS=" \
-	bind-utils procps-ng openssl numactl-libs firewalld-filesystem \
+	bind-utils procps-ng openssl numactl-libs firewalld firewalld-filesystem \
 	libpcap kubectl \
 	iproute iputils strace socat \
 	unbound-libs python2 \
