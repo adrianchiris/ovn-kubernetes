@@ -16,8 +16,8 @@ import (
 	utilnet "k8s.io/utils/net"
 
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 )
 
 var minRsrc = resource.MustParse("1k")
@@ -198,14 +198,14 @@ func (pr *PodRequest) cmdCheck(podLister corev1listers.PodLister) ([]byte, error
 // Argument '*PodRequest' encapsulates all the necessary information
 // kclient is passed in so that clientset can be reused from the server
 // Return value is the actual bytes to be sent back without further processing.
-func HandleCNIRequest(request *PodRequest, podLister corev1listers.PodLister) ([]byte, error) {
+func HandleCNIRequest(request *PodRequest, podLister corev1listers.PodLister, kclient kubernetes.Interface) ([]byte, error) {
 	var result []byte
 	var err error
 
 	klog.Infof("%s %s starting CNI request %+v", request, request.Command, request)
 	switch request.Command {
 	case CNIAdd:
-		result, err = request.cmdAdd(podLister)
+		result, err = request.cmdAdd(podLister, kclient)
 	case CNIDel:
 		result, err = request.cmdDel()
 	case CNICheck:

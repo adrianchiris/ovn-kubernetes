@@ -7,12 +7,11 @@ import (
 	"time"
 
 	"github.com/containernetworking/cni/pkg/types/current"
-	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/cni/types"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
-
 )
 
 // serverRunDir is the default directory for CNIServer runtime files
@@ -110,5 +109,5 @@ type Server struct {
 	runningSandboxAdds     map[string]*PodRequest
 
 	// CNI Server mode
-	mode        string
+	mode string
 }

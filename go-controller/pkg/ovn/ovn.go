@@ -522,7 +522,7 @@ func networkStatusAnnotationsChanged(oldPod, newPod *kapi.Pod) bool {
 // indicates the pod should be retried later.
 func (oc *Controller) ensurePod(oldPod, pod *kapi.Pod, addPort bool) bool {
 	// Try unscheduled pods later
-	if !podScheduled(pod) {
+	if !util.PodScheduled(pod) {
 		return false
 	}
 

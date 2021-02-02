@@ -705,7 +705,7 @@ func TestSetupSriovInterface(t *testing.T) {
 			ovntest.ProcessMockFnList(&mockNetLinkOps.Mock, tc.netLinkOpsMockHelper)
 			ovntest.ProcessMockFnList(&mockCNIPlugin.Mock, tc.cniPluginMockHelper)
 			ovntest.ProcessMockFnList(&mockNS.Mock, tc.nsMockHelper)
-			ovntest.ProcessMockFnList(&mockSriovNetLibOps.Mock, tc.sriovOpsMockHelper)
+			ovntest.ProcessMockFnList(&mockSriovnetOps.Mock, tc.sriovOpsMockHelper)
 			ovntest.ProcessMockFnList(&mockLink.Mock, tc.linkMockHelper)
 
 			hostIface, contIface, err := setupSriovInterface(tc.inpNetNS, tc.inpContID, tc.inpIfaceName, tc.inpPodIfaceInfo, tc.inpPCIAddrs)

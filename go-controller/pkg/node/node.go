@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"fmt"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/types"
 	"io/ioutil"
@@ -233,7 +234,6 @@ func (n *OvnNode) Start(wg *sync.WaitGroup) error {
 			return fmt.Errorf("failed to set node %s annotations: %v", n.name, err)
 		}
 		go n.gateway.Run(n.stopChan, wg)
-
 
 		// Wait for management port and gateway resources to be created by the master
 		klog.Infof("Waiting for gateway and management port readiness...")
@@ -477,7 +477,7 @@ func (n *OvnNode) addRepPort(pod *kapi.Pod, vfRepName string, ifInfo *cni.PodInt
 		return fmt.Errorf("failed to get smart-nic annotation. %v", err)
 	}
 
-	err := cni.ConfigureOVS(pod.Namespace, pod.Name, vfRepName, ifInfo, smartNicCD.SandboxId)
+	err := cni.ConfigureOVS(pod.Namespace, pod.Name, vfRepName, ifInfo, smartNicCD.SandboxId, context.TODO())
 	if err != nil {
 		return err
 	}

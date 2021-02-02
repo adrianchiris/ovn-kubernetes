@@ -3,6 +3,7 @@
 package cni
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -75,7 +76,7 @@ func moveIfToNetns(ifname string, netns ns.NetNS) error {
 	return nil
 }
 
-func setupNetwork(contIfaceName string, link netlink.Link, ifInfo *PodInterfaceInfo) error {
+func setupNetwork(link netlink.Link, ifInfo *PodInterfaceInfo) error {
 	// set the mac addresss, set down the interface before changing the mac
 	// so the EUI64 link local address generated uses the new MAC when we set it up again
 	if err := util.GetNetLinkOps().LinkSetDown(link); err != nil {
@@ -106,27 +107,6 @@ func setupNetwork(contIfaceName string, link netlink.Link, ifInfo *PodInterfaceI
 		}
 	}
 
-	// deny IPv6 neighbor solicitations
-	dadSysctlIface := fmt.Sprintf("/proc/sys/net/ipv6/conf/%s/dad_transmits", contIfaceName)
-	if _, err := os.Stat(dadSysctlIface); !os.IsNotExist(err) {
-		err = setSysctl(dadSysctlIface, 0)
-		if err != nil {
-			klog.Warningf("Failed to disable IPv6 DAD: %q", err)
-		}
-	}
-	// generate address based on EUI64
-	genSysctlIface := fmt.Sprintf("/proc/sys/net/ipv6/conf/%s/addr_gen_mode", contIfaceName)
-	if _, err := os.Stat(genSysctlIface); !os.IsNotExist(err) {
-		err = setSysctl(genSysctlIface, 0)
-		if err != nil {
-			klog.Warningf("Failed to set IPv6 address generation mode to EUI64: %q", err)
-		}
-	}
-
-	err := ip.SettleAddresses(contIfaceName, 10)
-	if err != nil {
-		klog.Warningf("Failed to settle addresses: %q", err)
-	}
 	return nil
 }
 
@@ -149,7 +129,7 @@ func setupInterface(netns ns.NetNS, containerID, ifName string, ifInfo *PodInter
 			return fmt.Errorf("failed to lookup %s: %v", contIface.Name, err)
 		}
 
-		err = setupNetwork(contIface.Name, link, ifInfo)
+		err = setupNetwork(link, ifInfo)
 		if err != nil {
 			return err
 		}
@@ -250,7 +230,7 @@ func setupSriovInterface(netns ns.NetNS, containerID, ifName string, ifInfo *Pod
 			return err
 		}
 
-		err = setupNetwork(contIface.Name, link, ifInfo)
+		err = setupNetwork(link, ifInfo)
 		if err != nil {
 			return err
 		}
@@ -267,7 +247,7 @@ func setupSriovInterface(netns ns.NetNS, containerID, ifName string, ifInfo *Pod
 	return hostIface, contIface, nil
 }
 
-func ConfigureOVS(namespace string, podName string, hostIfaceName string, ifInfo *PodInterfaceInfo, sandboxID string) error {
+func ConfigureOVS(namespace string, podName string, hostIfaceName string, ifInfo *PodInterfaceInfo, sandboxID string, ctx context.Context) error {
 	klog.Infof("ConfigureOVS: namespace: %s, podName: %s", namespace, podName)
 	ifaceID := fmt.Sprintf("%s_%s", namespace, podName)
 
@@ -317,7 +297,12 @@ func ConfigureOVS(namespace string, podName string, hostIfaceName string, ifInfo
 		}
 	}
 
-	if err := waitForPodFlows(ifInfo.MAC.String(), ifInfo.IPs, hostIfaceName, ifaceID); err != nil {
+	ofPort, err := getIfaceOFPort(hostIfaceName)
+	if err != nil {
+		return err
+	}
+
+	if err = waitForPodFlows(ctx, ifInfo.MAC.String(), ifInfo.IPs, hostIfaceName, ifaceID, ofPort); err != nil {
 		return fmt.Errorf("error while waiting on flows for pod: %v", err)
 	}
 	return nil
@@ -344,12 +329,38 @@ func (pr *PodRequest) ConfigureInterface(namespace string, podName string, ifInf
 	if err != nil {
 		return nil, err
 	}
+
 	if !ifInfo.IsSmartNic {
-		err = ConfigureOVS(namespace, podName, hostIface.Name, ifInfo, pr.SandboxID)
+		err = ConfigureOVS(namespace, podName, hostIface.Name, ifInfo, pr.SandboxID, pr.ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
+
+	err = netns.Do(func(hostNS ns.NetNS) error {
+		// deny IPv6 neighbor solicitations
+		dadSysctlIface := fmt.Sprintf("/proc/sys/net/ipv6/conf/%s/dad_transmits", contIface.Name)
+		if _, err := os.Stat(dadSysctlIface); !os.IsNotExist(err) {
+			err = setSysctl(dadSysctlIface, 0)
+			if err != nil {
+				klog.Warningf("Failed to disable IPv6 DAD: %q", err)
+			}
+		}
+		// generate address based on EUI64
+		genSysctlIface := fmt.Sprintf("/proc/sys/net/ipv6/conf/%s/addr_gen_mode", contIface.Name)
+		if _, err := os.Stat(genSysctlIface); !os.IsNotExist(err) {
+			err = setSysctl(genSysctlIface, 0)
+			if err != nil {
+				klog.Warningf("Failed to set IPv6 address generation mode to EUI64: %q", err)
+			}
+		}
+
+		return ip.SettleAddresses(contIface.Name, 10)
+	})
+	if err != nil {
+		klog.Warningf("Failed to settle addresses: %q", err)
+	}
+
 	return []*current.Interface{hostIface, contIface}, nil
 }
 
