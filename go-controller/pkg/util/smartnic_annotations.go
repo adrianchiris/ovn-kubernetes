@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
-	kapi "k8s.io/api/core/v1"
 )
 
 /*
@@ -55,8 +54,8 @@ type SmartNICConnectionStatus struct {
 	Reason string `json:"Reason,omitempty"`
 }
 
-func (scd *SmartNICConnectionDetails) FromPodAnnotation(pod *kapi.Pod) error {
-	if annot, ok := pod.Annotations[SmartNicConnectionDetailsAnnot]; ok {
+func (scd *SmartNICConnectionDetails) FromPodAnnotation(podAnnot map[string]string) error {
+	if annot, ok := podAnnot[SmartNicConnectionDetailsAnnot]; ok {
 		if err := json.Unmarshal([]byte(annot), scd); err != nil {
 			return fmt.Errorf("failed to unmarshal SmartNICConnectionDetails. %v", err)
 		}
@@ -91,8 +90,8 @@ func (scd *SmartNICConnectionDetails) AsAnnotation() (map[string]string, error) 
 	return annot, nil
 }
 
-func (scs *SmartNICConnectionStatus) FromPodAnnotation(pod *kapi.Pod) error {
-	if annot, ok := pod.Annotations[SmartNicConnetionStatusAnnot]; ok {
+func (scs *SmartNICConnectionStatus) FromPodAnnotation(podAnnot map[string]string) error {
+	if annot, ok := podAnnot[SmartNicConnetionStatusAnnot]; ok {
 		if err := json.Unmarshal([]byte(annot), scs); err != nil {
 			return fmt.Errorf("failed to unmarshal SmartNICConnectionStatus. %v", err)
 		}

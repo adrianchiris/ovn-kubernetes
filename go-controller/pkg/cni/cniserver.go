@@ -64,8 +64,8 @@ func NewCNIServer(rundir string, factory factory.NodeWatchFactory, kclient kuber
 		},
 		rundir:             rundir,
 		podLister:          corev1listers.NewPodLister(factory.LocalPodInformer().GetIndexer()),
-		runningSandboxAdds: make(map[string]*PodRequest),
 		kclient:            kclient,
+		runningSandboxAdds: make(map[string]*PodRequest),
 		mode:               mode,
 	}
 	router.NotFoundHandler = http.HandlerFunc(http.NotFound)

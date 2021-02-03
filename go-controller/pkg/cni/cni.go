@@ -1,15 +1,12 @@
 package cni
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"k8s.io/client-go/kubernetes"
-	"net"
-	"time"
-
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
+	"net"
 
 	"github.com/containernetworking/cni/pkg/types/current"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -17,7 +14,6 @@ import (
 
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 )
 
 var minRsrc = resource.MustParse("1k")
@@ -73,6 +69,7 @@ func (pr *PodRequest) cmdAdd(podLister corev1listers.PodLister, kclient kubernet
 	}
 
 	kubecli := &kube.Kube{KClient: kclient}
+	annotCondFn := ovnReady
 
 	if pr.IsSmartNIC {
 		// Add Smart-NIC connection-details annotation so ovnkube-node running on smart-NIC
@@ -80,32 +77,20 @@ func (pr *PodRequest) cmdAdd(podLister corev1listers.PodLister, kclient kubernet
 		if err := pr.addSmartNICConnectionDetailsAnnot(kubecli); err != nil {
 			return nil, err
 		}
+		annotCondFn = smartNICReady
 	}
 	// Get the IP address and MAC address of the pod
 	// for Smart-Nic, ensure connection-details is present
-	annotations, err := GetPodAnnotationsWithBackoff(kubecli, namespace, podName, pr.IsSmartNIC)
+	annotations, err := GetPodAnnotations(pr.ctx, podLister, namespace, podName, annotCondFn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pod annotation: %v", err)
 	}
 
-	// TODO(adrianc): ensure plumbing was completed successfully on smart-NIC by checking smartnic.connection-details
-
-	podInfo, err := util.UnmarshalPodAnnotation(annotations)
+	podInterfaceInfo, err := PodAnnotation2PodInfo(annotations, pr.IsSmartNIC)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal ovn annotation: %v", err)
+		return nil, err
 	}
 
-	ingress, egress, err := extractPodBandwidthResources(annotations)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse bandwidth request: %v", err)
-	}
-	podInterfaceInfo := &PodInterfaceInfo{
-		PodAnnotation: *podInfo,
-		MTU:           config.Default.MTU,
-		Ingress:       ingress,
-		Egress:        egress,
-		IsSmartNic:    pr.IsSmartNIC,
-	}
 	response := &Response{}
 	if !config.UnprivilegedMode {
 		response.Result, err = pr.getCNIResult(podInterfaceInfo)
@@ -144,7 +129,11 @@ func (pr *PodRequest) cmdCheck(podLister corev1listers.PodLister) ([]byte, error
 	}
 
 	// Get the IP address and MAC address of the pod
-	annotations, err := getPodAnnotations(pr.ctx, podLister, pr.PodNamespace, pr.PodName)
+	annotCondFn := ovnReady
+	if pr.IsSmartNIC {
+		annotCondFn = smartNICReady
+	}
+	annotations, err := GetPodAnnotations(pr.ctx, podLister, pr.PodNamespace, pr.PodName, annotCondFn)
 	if err != nil {
 		return nil, err
 	}
@@ -257,28 +246,4 @@ func (pr *PodRequest) getCNIResult(podInterfaceInfo *PodInterfaceInfo) (*current
 		Interfaces: interfacesArray,
 		IPs:        ips,
 	}, nil
-}
-
-// getPodAnnotations obtains the pod annotation from the cache
-func getPodAnnotations(ctx context.Context, podLister corev1listers.PodLister, namespace, name string) (map[string]string, error) {
-	timeout := time.After(30 * time.Second)
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("canceled waiting for annotations")
-		case <-timeout:
-			return nil, fmt.Errorf("timed out waiting for annotations")
-		default:
-			pod, err := podLister.Pods(namespace).Get(name)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get annotations: %v", err)
-			}
-			annotations := pod.ObjectMeta.Annotations
-			if _, ok := annotations[util.OvnPodAnnotationName]; ok {
-				return annotations, nil
-			}
-			// try again later
-			time.Sleep(200 * time.Millisecond)
-		}
-	}
 }

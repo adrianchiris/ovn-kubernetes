@@ -1,64 +1,80 @@
 package cni
 
 import (
+	"context"
 	"fmt"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
-
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
-func GetPodAnnotationsWithBackoff(kubecli kube.Interface, namespace string, podName string, isSmartNic bool) (annotations map[string]string, err error) {
-	// Get the IP address and MAC address from the API server.
-	// Exponential back off ~32 seconds + 7* t(api call)
-	var annotationBackoff = wait.Backoff{Duration: 1 * time.Second, Steps: 7, Factor: 1.5, Jitter: 0.1}
-	if err = wait.ExponentialBackoff(annotationBackoff, func() (bool, error) {
-		annotations, err = kubecli.GetAnnotationsOnPod(namespace, podName)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				// Pod not found; don't bother waiting longer
-				return false, err
-			}
-			klog.Warningf("Error getting pod annotations: %v", err)
-			return false, nil
-		}
-		if _, ok := annotations[util.OvnPodAnnotationName]; ok {
-			if isSmartNic {
-				if _, ok := annotations[util.SmartNicConnetionStatusAnnot]; ok {
-					return true, nil
-				}
-				return false, nil
-			}
-			return true, nil
-		}
-		return false, nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to get pod annotation: %v", err)
-	}
+// wait on a certain pod annotation related condition
+type podAnnotWaitCond func(podAnnotation map[string]string) bool
 
-	return annotations, nil
+// wait cond for OVN master to set pod-networks annotation
+func ovnReady(podAnnotation map[string]string) bool {
+	if _, ok := podAnnotation[util.OvnPodAnnotationName]; ok {
+		return true
+	}
+	return false
 }
 
-func PodAnnotation2PodInfo(podAnnotationMap map[string]string) (*PodInterfaceInfo, error) {
-	podAnnotation, err := util.UnmarshalPodAnnotation(podAnnotationMap)
+// wait cond smart-NIC: wait for OVN master to set pod-networks annotation and
+// ovnkube running on Smart-NIC to set connection-status pod annotation and its status is Ready
+func smartNICReady(podAnnotation map[string]string) bool {
+	if ovnReady(podAnnotation) {
+		// check Smart-NIC connection status
+		status := util.SmartNICConnectionStatus{}
+		if err := status.FromPodAnnotation(podAnnotation); err == nil {
+			if status.Status == util.SmartNicConnectionStatusReady {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// getPodAnnotations obtains the pod annotation from the cache
+func GetPodAnnotations(ctx context.Context, podLister corev1listers.PodLister, namespace, name string, annotCond podAnnotWaitCond) (map[string]string, error) {
+	timeout := time.After(30 * time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("canceled waiting for annotations")
+		case <-timeout:
+			return nil, fmt.Errorf("timed out waiting for annotations")
+		default:
+			pod, err := podLister.Pods(namespace).Get(name)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get annotations: %v", err)
+			}
+			annotations := pod.ObjectMeta.Annotations
+			if annotCond(annotations) {
+				return annotations, nil
+			}
+			// try again later
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+}
+
+func PodAnnotation2PodInfo(podAnnotation map[string]string, isSmartNic bool) (*PodInterfaceInfo, error) {
+	podAnnotSt, err := util.UnmarshalPodAnnotation(podAnnotation)
 	if err != nil {
 		return nil, err
 	}
-	ingress, egress, err := extractPodBandwidthResources(podAnnotationMap)
+	ingress, egress, err := extractPodBandwidthResources(podAnnotation)
 	if err != nil {
 		return nil, err
 	}
 	podInterfaceInfo := &PodInterfaceInfo{
-		PodAnnotation: *podAnnotation,
+		PodAnnotation: *podAnnotSt,
 		MTU:           config.Default.MTU,
 		Ingress:       ingress,
 		Egress:        egress,
-		IsSmartNic:    true,
+		IsSmartNic:    isSmartNic,
 	}
 	return podInterfaceInfo, nil
 }

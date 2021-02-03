@@ -247,7 +247,8 @@ func setupSriovInterface(netns ns.NetNS, containerID, ifName string, ifInfo *Pod
 	return hostIface, contIface, nil
 }
 
-func ConfigureOVS(namespace string, podName string, hostIfaceName string, ifInfo *PodInterfaceInfo, sandboxID string, ctx context.Context) error {
+func ConfigureOVS(ctx context.Context, namespace string, podName string, hostIfaceName string,
+	ifInfo *PodInterfaceInfo, sandboxID string) error {
 	klog.Infof("ConfigureOVS: namespace: %s, podName: %s", namespace, podName)
 	ifaceID := fmt.Sprintf("%s_%s", namespace, podName)
 
@@ -331,7 +332,7 @@ func (pr *PodRequest) ConfigureInterface(namespace string, podName string, ifInf
 	}
 
 	if !ifInfo.IsSmartNic {
-		err = ConfigureOVS(namespace, podName, hostIface.Name, ifInfo, pr.SandboxID, pr.ctx)
+		err = ConfigureOVS(pr.ctx, namespace, podName, hostIface.Name, ifInfo, pr.SandboxID)
 		if err != nil {
 			return nil, err
 		}

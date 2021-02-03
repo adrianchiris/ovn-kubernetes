@@ -6,7 +6,6 @@ package cni
 
 import (
 	"fmt"
-
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 )
