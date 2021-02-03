@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/containernetworking/cni/pkg/types/current"
+	"k8s.io/client-go/kubernetes"
+	corev1listers "k8s.io/client-go/listers/core/v1"
+
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/cni/types"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
-	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
 // serverRunDir is the default directory for CNIServer runtime files
@@ -22,9 +24,10 @@ const serverSocketPath string = serverRunDir + "/" + serverSocketName
 type PodInterfaceInfo struct {
 	util.PodAnnotation
 
-	MTU     int   `json:"mtu"`
-	Ingress int64 `json:"ingress"`
-	Egress  int64 `json:"egress"`
+	MTU        int   `json:"mtu"`
+	Ingress    int64 `json:"ingress"`
+	Egress     int64 `json:"egress"`
+	IsSmartNic bool  `josn:"smartnic"`
 }
 
 // Explicit type for CNI commands the server handles
@@ -86,9 +89,11 @@ type PodRequest struct {
 	ctx context.Context
 	// cancel should be called to cancel this request
 	cancel context.CancelFunc
+	// Interface to pod is a Smart-NIC interface
+	IsSmartNIC bool
 }
 
-type cniRequestFunc func(request *PodRequest, podLister corev1listers.PodLister) ([]byte, error)
+type cniRequestFunc func(request *PodRequest, podLister corev1listers.PodLister, kclient kubernetes.Interface) ([]byte, error)
 
 // Server object that listens for JSON-marshaled Request objects
 // on a private root-only Unix domain socket.
@@ -96,9 +101,13 @@ type Server struct {
 	http.Server
 	requestFunc cniRequestFunc
 	rundir      string
+	kclient     kubernetes.Interface
 	podLister   corev1listers.PodLister
 
 	// runningSandboxAdds is a map of sandbox ID to PodRequest for any CNIAdd operation
 	runningSandboxAddsLock sync.Mutex
 	runningSandboxAdds     map[string]*PodRequest
+
+	// CNI Server mode
+	mode string
 }
