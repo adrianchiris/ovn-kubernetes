@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 	kapi "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -18,6 +19,7 @@ import (
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/factory"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/metrics"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/types"
 )
 
 // *** The Server is PRIVATE API between OVN components and may be
@@ -46,7 +48,11 @@ import (
 // started.
 
 // NewCNIServer creates and returns a new Server object which will listen on a socket in the given path
-func NewCNIServer(rundir string, factory factory.NodeWatchFactory) *Server {
+func NewCNIServer(rundir string, factory factory.NodeWatchFactory, kclient kubernetes.Interface, mode string) (*Server, error) {
+	if mode == types.NodeModeSmartNIC {
+		return nil, fmt.Errorf("unsupported CNI server mode: %s", mode)
+	}
+
 	if len(rundir) == 0 {
 		rundir = serverRunDir
 	}
@@ -58,7 +64,9 @@ func NewCNIServer(rundir string, factory factory.NodeWatchFactory) *Server {
 		},
 		rundir:             rundir,
 		podLister:          corev1listers.NewPodLister(factory.LocalPodInformer().GetIndexer()),
+		kclient:            kclient,
 		runningSandboxAdds: make(map[string]*PodRequest),
+		mode:               mode,
 	}
 	router.NotFoundHandler = http.HandlerFunc(http.NotFound)
 	router.HandleFunc("/metrics", s.handleCNIMetrics).Methods("POST")
@@ -83,7 +91,7 @@ func NewCNIServer(rundir string, factory factory.NodeWatchFactory) *Server {
 		},
 	}, nil)
 
-	return s
+	return s, nil
 }
 
 // cancelOldestPodAdd requests that the earliest outstanding add operation for a given
@@ -222,13 +230,16 @@ func (s *Server) handleCNIRequest(r *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if s.mode == types.NodeModeSmartNICHost {
+		req.IsSmartNIC = true
+	}
 
 	if err := s.startSandboxRequest(req); err != nil {
 		return nil, err
 	}
 	defer s.finishSandboxRequest(req)
 
-	result, err := s.requestFunc(req, s.podLister)
+	result, err := s.requestFunc(req, s.podLister, s.kclient)
 	if err != nil {
 		// Prefix error with request information for easier debugging
 		return nil, fmt.Errorf("%s %v", req, err)
