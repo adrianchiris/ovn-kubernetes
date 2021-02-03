@@ -88,4 +88,9 @@ const (
 	// OVN-K8S annotation constants
 	OvnK8sPrefix   = "k8s.ovn.org"
 	OvnK8sTopoAnno = OvnK8sPrefix + "/" + "topology-version"
+	// OVNKube-Node Node types
+
+	NodeModeFull         = "full"
+	NodeModeSmartNIC     = "smart-nic"
+	NodeModeSmartNICHost = "smart-nic-host"
 )
