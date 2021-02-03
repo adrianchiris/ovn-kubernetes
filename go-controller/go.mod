@@ -70,5 +70,4 @@ replace (
 	k8s.io/metrics => k8s.io/metrics v0.20.0
 	k8s.io/mount-utils => k8s.io/mount-utils v0.20.0
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.20.0
-
 )
