@@ -1,4 +1,4 @@
-FROM centos:8
+FROM centos:8 as ovn
 
 USER root
 
@@ -14,7 +14,7 @@ COPY kubernetes.repo /etc/yum.repos.d/kubernetes.repo
 # install epel.repo
 RUN yum install -y epel-release
 RUN INSTALL_PKGS=" \
-	bind-utils procps-ng openssl numactl-libs firewalld firewalld-filesystem \
+	bind-utils procps-ng openssl numactl-libs \
 	libpcap kubectl \
 	iproute iputils strace socat \
 	unbound-libs python2 \
@@ -25,34 +25,37 @@ RUN INSTALL_PKGS=" \
     yum autoremove -y && \
     yum clean all && rm -rf /var/cache/dnf/*
 
-RUN mkdir -p /var/run/openvswitch
+# ovnkube.sh is the entry point. This script examines environment
+# variables to direct operation and configure ovn
+COPY ovnkube.sh ovndb-raft-functions.sh git_info /root/
+
+LABEL io.k8s.display-name="ovn" \
+      io.k8s.description="ovn centos image" \
+      maintainer="Girish Moodalbail <gmoodalbail@nvidia.com>"
+
+WORKDIR /root
+ENTRYPOINT /root/ovnkube.sh
+
+FROM ovn as ovnkube
+
+RUN yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False firewalld firewalld-filesystem && \
+    yum autoremove -y && \
+    yum clean all && rm -rf /var/cache/dnf/* && \
+    mkdir -p /usr/libexec/cni/
 
 # Built in ../../go_controller, then the binaries are copied here.
 # put things where they are in the rpm
-RUN mkdir -p /usr/libexec/cni/
 COPY ovnkube ovn-kube-util ovndbchecker /usr/bin/
 COPY ovn-k8s-cni-overlay /usr/libexec/cni/ovn-k8s-cni-overlay
 
-# ovnkube.sh is the entry point. This script examines environment
-# variables to direct operation and configure ovn
-COPY ovnkube.sh /root/
-COPY ovndb-raft-functions.sh /root/
-COPY chassis-del.sh /root/
+COPY chassis-del.sh git_info /root/
 # override the rpm's ovn_k8s.conf with this local copy
 COPY ovn_k8s.conf /etc/openvswitch/ovn_k8s.conf
 
-# copy git commit number into image
-COPY git_info /root
-
 # iptables wrappers
-COPY ./iptables-scripts/iptables /usr/sbin/
-COPY ./iptables-scripts/iptables-save /usr/sbin/
-COPY ./iptables-scripts/iptables-restore /usr/sbin/
-COPY ./iptables-scripts/ip6tables /usr/sbin/
-COPY ./iptables-scripts/ip6tables-save /usr/sbin/
-COPY ./iptables-scripts/ip6tables-restore /usr/sbin/
+COPY ./iptables-scripts/ip* /usr/sbin/
 
-LABEL io.k8s.display-name="ovn kubernetes" \
+LABEL io.k8s.display-name="ovn-kubernetes" \
       io.k8s.description="ovnkube centos image" \
       maintainer="Girish Moodalbail <gmoodalbail@nvidia.com>"
 
