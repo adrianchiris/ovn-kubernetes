@@ -12,8 +12,8 @@ RUN curl -s https://4a6c3c2ab9c3468ee4624cf102ba7dc81436598399db8477:@packages.n
 
 COPY kubernetes.repo /etc/yum.repos.d/kubernetes.repo
 # install epel.repo
-RUN yum install -y epel-release && \
-    INSTALL_PKGS=" \
+RUN yum install -y epel-release
+RUN INSTALL_PKGS=" \
 	bind-utils procps-ng openssl numactl-libs firewalld firewalld-filesystem \
 	libpcap kubectl \
 	iproute iputils strace socat \
