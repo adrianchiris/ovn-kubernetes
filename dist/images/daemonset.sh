@@ -43,6 +43,7 @@ OVN_MULTICAST_ENABLE=""
 OVN_EGRESSIP_ENABLE=
 OVN_V4_JOIN_SUBNET=""
 OVN_V6_JOIN_SUBNET=""
+OVNKUBE_NODE_MGMT_PORT_NETDEV=""
 
 # Parse parameters given as arguments to this script.
 while [ "$1" != "" ]; do
@@ -163,6 +164,9 @@ while [ "$1" != "" ]; do
   --v6-join-subnet)
     OVN_V6_JOIN_SUBNET=$VALUE
     ;;
+  --ovnkube-node-mgmt-port-netdev)
+    OVNKUBE_NODE_MGMT_PORT_NETDEV=$VALUE
+    ;;
   *)
     echo "WARNING: unknown parameter \"$PARAM\""
     exit 1
@@ -250,6 +254,8 @@ ovn_v4_join_subnet=${OVN_V4_JOIN_SUBNET}
 echo "ovn_v4_join_subnet: ${ovn_v4_join_subnet}"
 ovn_v6_join_subnet=${OVN_V6_JOIN_SUBNET}
 echo "ovn_v6_join_subnet: ${ovn_v6_join_subnet}"
+ovnkube_node_mgmt_port_netdev=${OVNKUBE_NODE_MGMT_PORT_NETDEV}
+echo "ovnkube_node_mgmt_port_netdev: ${ovnkube_node_mgmt_port_netdev}"
 
 ovn_image=${image} \
   ovn_image_pull_policy=${image_pull_policy} \
@@ -295,6 +301,7 @@ ovn_image=${image} \
   ovn_multicast_enable=${ovn_multicast_enable} \
   ovn_egress_ip_enable=${ovn_egress_ip_enable} \
   ovn_remote_probe_interval=${ovn_remote_probe_interval} \
+  ovnkube_node_mgmt_port_netdev=${ovnkube_node_mgmt_port_netdev} \
   ovnkube_app_name=ovnkube-node-smart-nic-host \
   j2 ../templates/ovnkube-node.yaml.j2 -o ../yaml/ovnkube-node-smart-nic-host.yaml
 
