@@ -45,6 +45,7 @@ OVN_V6_JOIN_SUBNET=""
 OVN_NETFLOW_TARGETS=""
 OVN_SFLOW_TARGETS=""
 OVN_IPFIX_TARGETS=""
+OVNKUBE_NODE_MGMT_PORT_NETDEV=""
 
 # Parse parameters given as arguments to this script.
 while [ "$1" != "" ]; do
@@ -171,6 +172,9 @@ while [ "$1" != "" ]; do
   --ipfix-targets)
     OVN_IPFIX_TARGETS=$VALUE
     ;;
+  --ovnkube-node-mgmt-port-netdev)
+    OVNKUBE_NODE_MGMT_PORT_NETDEV=$VALUE
+    ;;
   *)
     echo "WARNING: unknown parameter \"$PARAM\""
     exit 1
@@ -264,6 +268,8 @@ ovn_sflow_targets=${OVN_SFLOW_TARGETS}
 echo "ovn_sflow_targets: ${ovn_sflow_targets}"
 ovn_ipfix_targets=${OVN_IPFIX_TARGETS}
 echo "ovn_ipfix_targets: ${ovn_ipfix_targets}"
+ovnkube_node_mgmt_port_netdev=${OVNKUBE_NODE_MGMT_PORT_NETDEV}
+echo "ovnkube_node_mgmt_port_netdev: ${ovnkube_node_mgmt_port_netdev}"
 
 ovn_image=${image} \
   ovn_image_pull_policy=${image_pull_policy} \
@@ -314,6 +320,7 @@ ovn_image=${image} \
   ovn_netflow_targets=${ovn_netflow_targets} \
   ovn_sflow_targets=${ovn_netflow_targets} \
   ovn_ipfix_targets=${ovn_ipfix_targets} \
+  ovnkube_node_mgmt_port_netdev=${ovnkube_node_mgmt_port_netdev} \
   ovnkube_app_name=ovnkube-node-smart-nic-host \
   j2 ../templates/ovnkube-node.yaml.j2 -o ../yaml/ovnkube-node-smart-nic-host.yaml
 
