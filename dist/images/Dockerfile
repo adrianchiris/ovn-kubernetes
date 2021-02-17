@@ -14,7 +14,7 @@ COPY kubernetes.repo /etc/yum.repos.d/kubernetes.repo
 # install epel.repo
 RUN yum install -y epel-release
 RUN INSTALL_PKGS=" \
-	bind-utils procps-ng openssl numactl-libs \
+	bind-utils procps-ng openssl numactl-libs firewalld firewalld-filesystem \
 	libpcap kubectl \
 	iproute iputils strace socat \
 	unbound-libs python2 \
@@ -28,6 +28,7 @@ RUN INSTALL_PKGS=" \
 # ovnkube.sh is the entry point. This script examines environment
 # variables to direct operation and configure ovn
 COPY ovnkube.sh ovndb-raft-functions.sh git_info /root/
+COPY ovn-kube-util /usr/bin/
 
 LABEL io.k8s.display-name="ovn" \
       io.k8s.description="ovn centos image" \
@@ -38,14 +39,11 @@ ENTRYPOINT /root/ovnkube.sh
 
 FROM ovn as ovnkube
 
-RUN yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False firewalld firewalld-filesystem && \
-    yum autoremove -y && \
-    yum clean all && rm -rf /var/cache/dnf/* && \
-    mkdir -p /usr/libexec/cni/
+RUN  mkdir -p /usr/libexec/cni/
 
 # Built in ../../go_controller, then the binaries are copied here.
 # put things where they are in the rpm
-COPY ovnkube ovn-kube-util ovndbchecker /usr/bin/
+COPY ovnkube ovndbchecker /usr/bin/
 COPY ovn-k8s-cni-overlay /usr/libexec/cni/ovn-k8s-cni-overlay
 
 COPY chassis-del.sh git_info /root/
