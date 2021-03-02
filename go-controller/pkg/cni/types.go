@@ -27,7 +27,7 @@ type PodInterfaceInfo struct {
 	MTU        int   `json:"mtu"`
 	Ingress    int64 `json:"ingress"`
 	Egress     int64 `json:"egress"`
-	IsSmartNic bool  `josn:"smartnic"`
+	IsSmartNic bool  `json:"smartnic"`
 }
 
 // Explicit type for CNI commands the server handles

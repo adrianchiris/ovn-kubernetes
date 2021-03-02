@@ -371,7 +371,7 @@ func (n *OvnNode) Start(wg *sync.WaitGroup) error {
 			return fmt.Errorf("cannot get kubeclient for starting CNI server")
 		}
 		var cniServer *cni.Server
-		cniServer, err = cni.NewCNIServer("", n.watchFactory, kclient.KClient, config.OvnKubeNode.Mode)
+		cniServer, err = cni.NewCNIServer("", n.watchFactory, kclient.KClient)
 		if err == nil {
 			err = cniServer.Start(cni.HandleCNIRequest)
 		}
