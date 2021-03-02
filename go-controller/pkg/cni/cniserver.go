@@ -48,9 +48,9 @@ import (
 // started.
 
 // NewCNIServer creates and returns a new Server object which will listen on a socket in the given path
-func NewCNIServer(rundir string, factory factory.NodeWatchFactory, kclient kubernetes.Interface, mode string) (*Server, error) {
-	if mode == types.NodeModeSmartNIC {
-		return nil, fmt.Errorf("unsupported CNI server mode: %s", mode)
+func NewCNIServer(rundir string, factory factory.NodeWatchFactory, kclient kubernetes.Interface) (*Server, error) {
+	if config.OvnKubeNode.Mode == types.NodeModeSmartNIC {
+		return nil, fmt.Errorf("unsupported ovnkube-node mode for CNI server: %s", config.OvnKubeNode.Mode)
 	}
 
 	if len(rundir) == 0 {
@@ -66,7 +66,7 @@ func NewCNIServer(rundir string, factory factory.NodeWatchFactory, kclient kuber
 		podLister:          corev1listers.NewPodLister(factory.LocalPodInformer().GetIndexer()),
 		kclient:            kclient,
 		runningSandboxAdds: make(map[string]*PodRequest),
-		mode:               mode,
+		mode:               config.OvnKubeNode.Mode,
 	}
 	router.NotFoundHandler = http.HandlerFunc(http.NotFound)
 	router.HandleFunc("/metrics", s.handleCNIMetrics).Methods("POST")

@@ -2,6 +2,7 @@ package cni
 
 import (
 	"fmt"
+
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 )
@@ -23,7 +24,7 @@ func (pr *PodRequest) addSmartNICConnectionDetailsAnnot(kube kube.Interface) err
 		return err
 	}
 
-	// 4. Set smart-nic connection-details pod annotation
+	// 3. Set smart-nic connection-details pod annotation
 	var domain, bus, dev, fn int
 	parsed, err := fmt.Sscanf(pfPciAddress, "%04x:%02x:%02x.%d", &domain, &bus, &dev, &fn)
 	if err != nil {

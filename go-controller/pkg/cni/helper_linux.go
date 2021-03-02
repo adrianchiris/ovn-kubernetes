@@ -328,6 +328,10 @@ func (pr *PodRequest) ConfigureInterface(namespace string, podName string, ifInf
 		// SR-IOV Case
 		hostIface, contIface, err = setupSriovInterface(netns, pr.SandboxID, pr.IfName, ifInfo, pr.CNIConf.DeviceID)
 	} else {
+		if pr.IsSmartNIC {
+			return nil, fmt.Errorf("unexpected configuration, pod request on smart-nic host. " +
+				"device ID must be provided")
+		}
 		// General case
 		hostIface, contIface, err = setupInterface(netns, pr.SandboxID, pr.IfName, ifInfo)
 	}

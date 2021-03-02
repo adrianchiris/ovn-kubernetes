@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	types2 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/types"
 	"io/ioutil"
 	"k8s.io/client-go/kubernetes"
 	"net"
@@ -90,7 +89,7 @@ func TestCNIServer(t *testing.T) {
 		t.Fatalf("failed to create watch factory: %v", err)
 	}
 
-	s, err := NewCNIServer(tmpDir, wf, fakeClient, types2.NodeModeFull)
+	s, err := NewCNIServer(tmpDir, wf, fakeClient)
 	if err != nil {
 		t.Fatalf("error creating CNI server: %v", err)
 	}
@@ -288,7 +287,7 @@ func TestCNIServerCancelAdd(t *testing.T) {
 
 	started := make(chan bool)
 
-	s, err := NewCNIServer(tmpDir, wf, fakeClient, types2.NodeModeFull)
+	s, err := NewCNIServer(tmpDir, wf, fakeClient)
 	if err != nil {
 		t.Fatalf("error Creating CNI server: %v", err)
 	}

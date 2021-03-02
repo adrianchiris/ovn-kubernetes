@@ -36,7 +36,7 @@ func isSmartNICReady(podAnnotation map[string]string) bool {
 	return false
 }
 
-// getPodAnnotations obtains the pod annotation from the cache
+// GetPodAnnotations obtains the pod annotation from the cache
 func GetPodAnnotations(ctx context.Context, podLister corev1listers.PodLister, namespace, name string, annotCond podAnnotWaitCond) (map[string]string, error) {
 	timeout := time.After(30 * time.Second)
 	for {

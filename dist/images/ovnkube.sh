@@ -1031,18 +1031,20 @@ ovn-node() {
   fi
 
   local ovn_node_ssl_opts=""
-  [[ "yes" == ${OVN_SSL_ENABLE} ]] && {
-    ovn_node_ssl_opts="
-        --nb-client-privkey ${ovn_controller_pk}
-        --nb-client-cert ${ovn_controller_cert}
-        --nb-client-cacert ${ovn_ca_cert}
-        --nb-cert-common-name ${ovn_controller_cname}
-        --sb-client-privkey ${ovn_controller_pk}
-        --sb-client-cert ${ovn_controller_cert}
-        --sb-client-cacert ${ovn_ca_cert}
-        --sb-cert-common-name ${ovn_controller_cname}
-      "
-  }
+  if [[ ${ovnkube_node_mode} != "smart-nic-host" ]]; then
+      [[ "yes" == ${OVN_SSL_ENABLE} ]] && {
+        ovn_node_ssl_opts="
+            --nb-client-privkey ${ovn_controller_pk}
+            --nb-client-cert ${ovn_controller_cert}
+            --nb-client-cacert ${ovn_ca_cert}
+            --nb-cert-common-name ${ovn_controller_cname}
+            --sb-client-privkey ${ovn_controller_pk}
+            --sb-client-cert ${ovn_controller_cert}
+            --sb-client-cacert ${ovn_ca_cert}
+            --sb-cert-common-name ${ovn_controller_cname}
+          "
+      }
+  fi
 
   ovn_unprivileged_flag="--unprivileged-mode"
   if test -z "${OVN_UNPRIVILEGED_MODE+x}" -o "x${OVN_UNPRIVILEGED_MODE}" = xno; then

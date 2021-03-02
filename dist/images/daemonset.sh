@@ -271,6 +271,7 @@ ovn_image=${image} \
   ovn_egress_ip_enable=${ovn_egress_ip_enable} \
   ovn_ssl_en=${ovn_ssl_en} \
   ovn_remote_probe_interval=${ovn_remote_probe_interval} \
+  ovnkube_app_name=ovnkube-node \
   j2 ../templates/ovnkube-node.yaml.j2 -o ../yaml/ovnkube-node.yaml
 
 # ovnkube node for smart-nic-host nic daemonset
@@ -289,11 +290,13 @@ ovn_image=${image} \
   ovn_hybrid_overlay_net_cidr=${ovn_hybrid_overlay_net_cidr} \
   ovn_hybrid_overlay_enable=${ovn_hybrid_overlay_enable} \
   ovn_disable_snat_multiple_gws=${ovn_disable_snat_multiple_gws} \
+  ovn_v4_join_subnet=${ovn_v4_join_subnet} \
+  ovn_v6_join_subnet=${ovn_v6_join_subnet} \
   ovn_multicast_enable=${ovn_multicast_enable} \
   ovn_egress_ip_enable=${ovn_egress_ip_enable} \
-  ovn_ssl_en=${ovn_ssl_en} \
   ovn_remote_probe_interval=${ovn_remote_probe_interval} \
-  j2 ../templates/ovnkube-node-smart-nic-host.yaml.j2 -o ../yaml/ovnkube-node-smart-nic-host.yaml
+  ovnkube_app_name=ovnkube-node-smart-nic-host \
+  j2 ../templates/ovnkube-node.yaml.j2 -o ../yaml/ovnkube-node-smart-nic-host.yaml
 
 ovn_image=${image} \
   ovn_image_pull_policy=${image_pull_policy} \

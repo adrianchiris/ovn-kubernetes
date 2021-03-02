@@ -24,7 +24,7 @@ func (n *OvnNode) watchSmartNicPods() {
 	_ = n.watchFactory.AddPodHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			pod := obj.(*kapi.Pod)
-			klog.Infof("AddFunc for POD: %s/%s", pod.ObjectMeta.GetNamespace(), pod.ObjectMeta.GetName())
+			klog.Infof("Add for Pod: %s/%s", pod.ObjectMeta.GetNamespace(), pod.ObjectMeta.GetName())
 			if !util.PodWantsNetwork(pod) || pod.Status.Phase == kapi.PodRunning {
 				return
 			}
@@ -60,7 +60,7 @@ func (n *OvnNode) watchSmartNicPods() {
 		},
 		UpdateFunc: func(old, newer interface{}) {
 			pod := newer.(*kapi.Pod)
-			klog.Infof("UpdateFunc for POD: %s/%s", pod.ObjectMeta.GetNamespace(), pod.ObjectMeta.GetName())
+			klog.Infof("Update for Pod: %s/%s", pod.ObjectMeta.GetNamespace(), pod.ObjectMeta.GetName())
 			if !util.PodWantsNetwork(pod) || pod.Status.Phase == kapi.PodRunning {
 				retryPods.Delete(pod.UID)
 				return
@@ -74,18 +74,15 @@ func (n *OvnNode) watchSmartNicPods() {
 				vfRepName, err := n.getVfRepName(pod)
 				if err != nil {
 					klog.Infof("Failed to get rep name, %s. retrying", err)
-					retryPods.Store(pod.UID, true)
 					return
 				}
 				podInterfaceInfo, err := cni.PodAnnotation2PodInfo(pod.Annotations, true)
 				if err != nil {
-					retryPods.Store(pod.UID, true)
 					return
 				}
 				err = n.addRepPort(pod, vfRepName, podInterfaceInfo)
 				if err != nil {
 					klog.Infof("Failed to add rep port, %s. retrying", err)
-					retryPods.Store(pod.UID, true)
 				} else {
 					servedPods.Store(pod.UID, true)
 					retryPods.Delete(pod.UID)
@@ -94,7 +91,7 @@ func (n *OvnNode) watchSmartNicPods() {
 		},
 		DeleteFunc: func(obj interface{}) {
 			pod := obj.(*kapi.Pod)
-			klog.Infof("DeleteFunc for POD: %s/%s", pod.ObjectMeta.GetNamespace(), pod.ObjectMeta.GetName())
+			klog.Infof("Delete for Pod: %s/%s", pod.ObjectMeta.GetNamespace(), pod.ObjectMeta.GetName())
 			if _, ok := servedPods.Load(pod.UID); !ok {
 				return
 			}
@@ -107,7 +104,7 @@ func (n *OvnNode) watchSmartNicPods() {
 			}
 			err = n.delRepPort(vfRepName)
 			if err != nil {
-				klog.Infof("Failed to delete VF representor %s. %s", vfRepName, err)
+				klog.Errorf("Failed to delete VF representor %s. %s", vfRepName, err)
 			}
 		},
 	}, nil)
@@ -124,7 +121,7 @@ func (n *OvnNode) getVfRepName(pod *kapi.Pod) (string, error) {
 
 // addRepPort adds the representor of the VF to the ovs bridge
 func (n *OvnNode) addRepPort(pod *kapi.Pod, vfRepName string, ifInfo *cni.PodInterfaceInfo) error {
-	klog.Infof("addRepPort: %s", vfRepName)
+	klog.Infof("Adding VF representor %s", vfRepName)
 	smartNicCD := util.SmartNICConnectionDetails{}
 	if err := smartNicCD.FromPodAnnotation(pod.Annotations); err != nil {
 		return fmt.Errorf("failed to get smart-nic annotation. %v", err)
@@ -143,13 +140,11 @@ func (n *OvnNode) addRepPort(pod *kapi.Pod, vfRepName string, ifInfo *cni.PodInt
 		return fmt.Errorf("failed to get link device for interface %s", vfRepName)
 	}
 
-	klog.Infof("addRepPort: set link mtu %s", vfRepName)
 	if err = util.GetNetLinkOps().LinkSetMTU(link, ifInfo.MTU); err != nil {
 		_ = n.delRepPort(vfRepName)
 		return fmt.Errorf("failed to setup representor port. failed to set MTU for interface %s", vfRepName)
 	}
 
-	klog.Infof("addRepPort: set link up for %s", vfRepName)
 	if err = util.GetNetLinkOps().LinkSetUp(link); err != nil {
 		_ = n.delRepPort(vfRepName)
 		return fmt.Errorf("failed to setup representor port. failed to set link up for interface %s", vfRepName)
@@ -180,7 +175,7 @@ func (n *OvnNode) addRepPort(pod *kapi.Pod, vfRepName string, ifInfo *cni.PodInt
 // delRepPort delete the representor of the VF from the ovs bridge
 func (n *OvnNode) delRepPort(vfRepName string) error {
 	//TODO(adrianc): handle: clearPodBandwidth(pr.SandboxID), pr.deletePodConntrack()
-	klog.Infof("delRepPort: %s", vfRepName)
+	klog.Infof("Delete VF representor %s port", vfRepName)
 	// Set link down for representor port
 	link, err := util.GetNetLinkOps().LinkByName(vfRepName)
 	if err != nil {
@@ -190,7 +185,7 @@ func (n *OvnNode) delRepPort(vfRepName string) error {
 			klog.Warningf("Failed to set link down for representor port %s. %v", vfRepName, linkDownErr)
 		}
 	}
-	klog.Infof("Port %s link state set to \"down\"", vfRepName)
+
 	// remove from br-int
 	return wait.PollImmediate(500*time.Millisecond, 60*time.Second, func() (bool, error) {
 		_, _, err := util.RunOVSVsctl("--if-exists", "del-port", "br-int", vfRepName)
