@@ -263,7 +263,7 @@ func (n *OvnNode) Start(wg *sync.WaitGroup) error {
 
 	// Upgrade for Node. If we upgrade workers before masters, then we need to keep service routing via
 	// mgmt port until masters have been updated and modified OVN config. Run a goroutine to handle this case
-	if config.GatewayModeShared == config.Gateway.Mode {
+	if (config.GatewayModeShared == config.Gateway.Mode) && (config.OvnKubeNode.Mode == types.NodeModeFull) {
 		// note this will change in the future to control-plane:
 		// https://github.com/kubernetes/kubernetes/pull/95382
 		masterNode, err := labels.NewRequirement("node-role.kubernetes.io/master", selection.Exists, nil)
