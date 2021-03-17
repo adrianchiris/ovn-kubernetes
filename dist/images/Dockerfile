@@ -10,18 +10,19 @@ RUN curl -s https://3c720378ea793bfa1cdbc4180c64fca33176674914260f6d:@packages.n
 # Based on nv OVN commit: d3e76ab3
 RUN curl -s https://4a6c3c2ab9c3468ee4624cf102ba7dc81436598399db8477:@packages.nvidia.com/install/repositories/sdn/nv-ovn-L1/script.rpm.sh | bash 
 
+ARG K8S_VER
+
 COPY kubernetes.repo /etc/yum.repos.d/kubernetes.repo
 # install epel.repo
 RUN yum install -y epel-release
 RUN INSTALL_PKGS=" \
 	bind-utils procps-ng openssl numactl-libs firewalld firewalld-filesystem \
-	libpcap kubectl \
-	iproute iputils strace socat \
-	unbound-libs python2 \
+	libpcap iproute iputils strace socat unbound-libs python2 \
         " && \
 	yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False $INSTALL_PKGS && \
     yum -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False update && \
-    yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False openvswitch openvswitch-devel ovn ovn-host ovn-central && \
+    yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False \
+        kubectl$K8S_VER openvswitch openvswitch-devel ovn ovn-host ovn-central && \
     yum autoremove -y && \
     yum clean all && rm -rf /var/cache/dnf/*
 
