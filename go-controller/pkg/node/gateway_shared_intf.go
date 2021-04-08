@@ -228,6 +228,13 @@ func newSharedGatewayOpenFlowManager(patchPort, macAddress, gwBridge, gwIntf str
 				"actions=ct(commit, zone=%d), output:%s",
 				defaultOpenFlowCookie, ofportPatch, config.Default.ConntrackZone, ofportPhys))
 
+		// table 0, packets coming from external and destined to tunnel port (Overlay traffic) send
+		// to LOCAL for decap.
+		dftFlows = append(dftFlows,
+			fmt.Sprintf("cookie=%s, priority=50, in_port=%s, udp, ip_dst=%s, dst_port=%d "+
+				"actions=output:LOCAL", defaultOpenFlowCookie, ofportPhys, config.Default.EncapIP,
+				config.Default.EncapPort))
+
 		// table 0, packets coming from external. Send it through conntrack and
 		// resubmit to table 1 to know the state of the connection.
 		dftFlows = append(dftFlows,
@@ -258,6 +265,13 @@ func newSharedGatewayOpenFlowManager(patchPort, macAddress, gwBridge, gwIntf str
 			fmt.Sprintf("cookie=%s, priority=100, in_port=%s, ipv6, "+
 				"actions=ct(commit, zone=%d), output:%s",
 				defaultOpenFlowCookie, ofportPatch, config.Default.ConntrackZone, ofportPhys))
+
+		// table 0, packets coming from external and destined to tunnel port (Overlay traffic) send
+		// to LOCAL for decap.
+		dftFlows = append(dftFlows,
+			fmt.Sprintf("cookie=%s, priority=50, in_port=%s, udp6, ip6_dst=%s, dst_port=%d "+
+				"actions=output:LOCAL", defaultOpenFlowCookie, ofportPhys, config.Default.EncapIP,
+				config.Default.EncapPort))
 
 		// table 0, packets coming from external. Send it through conntrack and
 		// resubmit to table 1 to know the state of the connection.
