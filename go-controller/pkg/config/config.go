@@ -325,6 +325,10 @@ type HybridOverlayConfig struct {
 type OvnKubeNodeConfig struct {
 	Mode           string `gcfg:"mode"`
 	MgmtPortNetdev string `gcfg:"mgmt-port-netdev"`
+	// Smart-NIC Host PF information
+	HostPfMacAddr	net.HardwareAddr
+	HostPfIpAddr	[]*net.IPNet
+	HostPfRep		string
 }
 
 // OvnDBScheme describes the OVN database connection transport method
@@ -1815,5 +1819,43 @@ func buildOvnKubeNodeConfig(ctx *cli.Context, cli, file *config) error {
 			return fmt.Errorf("ovnkube-node-mgmt-port-netdev must be provided")
 		}
 	}
+
+	// Adrianc: This is a Hack, we need to derrive host IP and mac in other way
+	// These are all Smart-NIC Gateway configs
+	if OvnKubeNode.Mode == types.NodeModeSmartNIC {
+		var mac, ipcidr string
+		if Default.EncapIP == "10.55.55.101" {
+			mac = "0c:42:a1:de:cf:7c"
+			ipcidr = "10.55.55.11/24"
+		}
+		if Default.EncapIP == "10.55.55.102" {
+			mac = "0c:42:a1:c6:cf:7c"
+			ipcidr = "10.55.55.12/24"
+		}
+		var err error
+		OvnKubeNode.HostPfMacAddr, err = net.ParseMAC(mac)
+		if err != nil {
+			klog.Errorf("Failed to parse MAC addr %s", mac)
+		}
+		OvnKubeNode.HostPfIpAddr, err = parseIPs([]string{ipcidr})
+		if err != nil {
+			klog.Errorf("Failed to parse IP addr CIDR %s", ipcidr)
+		}
+		OvnKubeNode.HostPfRep = "pf0hpf"
+	}
 	return nil
+}
+
+// parseIPs parses a list of ip/mask strings
+func parseIPs(ips []string) ([]*net.IPNet, error) {
+	var ipnets []*net.IPNet
+	for _, ip := range ips {
+		i, net, err := net.ParseCIDR(ip)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse ip addresses:%v. %v", ips, err)
+		}
+		net.IP = i
+		ipnets = append(ipnets, net)
+	}
+	return ipnets, nil
 }

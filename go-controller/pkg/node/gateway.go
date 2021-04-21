@@ -224,6 +224,26 @@ func gatewayInitInternal(nodeName, gwIntf string, subnets []*net.IPNet, gwNextHo
 		return bridgeName, uplinkName, nil, nil, err
 	}
 
+	// Adrianc: use host mac address and IP
+	if config.OvnKubeNode.Mode == types.NodeModeSmartNIC {
+		// swap IPs and MAC with host IP an mac
+		macAddress = config.OvnKubeNode.HostPfMacAddr
+		ips = config.OvnKubeNode.HostPfIpAddr
+	}
+
+	//TODO: remove this its just for logging
+	gwConfig := util.L3GatewayConfig{
+		Mode:           config.GatewayModeShared,
+		ChassisID:      chassisID,
+		InterfaceID:    ifaceID,
+		MACAddress:     macAddress,
+		IPAddresses:    ips,
+		NextHops:       gwNextHops,
+		NodePortEnable: config.Gateway.NodeportEnable,
+		VLANID:         &config.Gateway.VLANID,
+	}
+	klog.Info("GW config: %v", gwConfig)
+
 	err = util.SetL3GatewayConfig(nodeAnnotator, &util.L3GatewayConfig{
 		Mode:           config.GatewayModeShared,
 		ChassisID:      chassisID,

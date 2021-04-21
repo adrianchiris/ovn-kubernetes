@@ -183,6 +183,14 @@ func (n *OvnNode) initGateway(subnets []*net.IPNet, nodeAnnotator kube.Annotator
 		return err
 	}
 
+	// Adrianc: Replace Network interface addresses with host addresses
+	// todo: this needs to be sorted per ipv4/6
+	if config.OvnKubeNode.Mode == types.NodeModeSmartNIC {
+		klog.Infof("Node Primary IP before replace: %v", ifAddrs)
+		ifAddrs = config.OvnKubeNode.HostPfIpAddr
+		klog.Infof("Node Primary IP after replace: %v", ifAddrs)
+	}
+
 	v4IfAddr, _ := util.MatchIPNetFamily(false, ifAddrs)
 	v6IfAddr, _ := util.MatchIPNetFamily(true, ifAddrs)
 	if err := util.SetNodePrimaryIfAddr(nodeAnnotator, v4IfAddr, v6IfAddr); err != nil {

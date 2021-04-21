@@ -197,6 +197,9 @@ func (npw *nodePortWatcher) SyncServices(services []interface{}) {
 //    the return traffic can be steered back to OVN logical topology
 // -- to handle host -> service access, via masquerading from the host to OVN GR
 func newSharedGatewayOpenFlowManager(patchPort, macAddress, gwBridge, gwIntf string, ips []*net.IPNet) (*openflowManager, error) {
+	klog.Infof("newSharedGatewayOpenFlowManager: patchPort:%s, macAddress:%s, gwBridge:%s, gwIntf:%s, ips:%v," +
+		" hpfPort:%s", patchPort, macAddress, gwBridge, gwIntf, ips, config.OvnKubeNode.HostPfRep)
+
 	// Get ofport of patchPort
 	ofportPatch, stderr, err := util.RunOVSVsctl("get", "Interface", patchPort, "ofport")
 	if err != nil {
@@ -211,14 +214,31 @@ func newSharedGatewayOpenFlowManager(patchPort, macAddress, gwBridge, gwIntf str
 			gwIntf, stderr, err)
 	}
 
+	// Get ofport of host interface (either local or host pF in case of smartNIC)
+	var ofportHost string
+	if config.OvnKubeNode.Mode == types.NodeModeSmartNIC {
+		// TODO: make common: GetOfPortForInterface(...)
+		var stderr string
+		var err error
+		ofportHost, stderr, err = util.RunOVSVsctl("get", "interface", config.OvnKubeNode.HostPfRep, "ofport")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ofport of %s, stderr: %q, error: %v",
+				gwIntf, stderr, err)
+		}
+	} else {
+		ofportHost = "LOCAL"
+	}
+	klog.Infof("ofportHost:%s", ofportHost)
+
+
 	HostMasqCTZone := config.Default.ConntrackZone + 1
 	OVNMasqCTZone := HostMasqCTZone + 1
 	var dftFlows []string
 
 	// table 0, we check to see if this dest mac is the shared mac, if so flood to both ports
 	dftFlows = append(dftFlows,
-		fmt.Sprintf("cookie=%s, priority=10, table=0, in_port=%s, dl_dst=%s, actions=output:%s,output:LOCAL",
-			defaultOpenFlowCookie, ofportPhys, macAddress, ofportPatch))
+		fmt.Sprintf("cookie=%s, priority=10, table=0, in_port=%s, dl_dst=%s, actions=output:%s,output:%s",
+			defaultOpenFlowCookie, ofportPhys, macAddress, ofportPatch, ofportHost))
 
 	if config.IPv4Mode {
 		// table 0, packets coming from pods headed externally. Commit connections
@@ -247,9 +267,9 @@ func newSharedGatewayOpenFlowManager(patchPort, macAddress, gwBridge, gwIntf str
 
 		// table 0, Reply SVC traffic from Host -> OVN, unSNAT and goto table 5
 		dftFlows = append(dftFlows,
-			fmt.Sprintf("cookie=%s, priority=500, in_port=LOCAL, ip, ip_dst=%s,"+
+			fmt.Sprintf("cookie=%s, priority=500, in_port=%s, ip, ip_dst=%s,"+
 				"actions=ct(zone=%d,nat,table=5)",
-				defaultOpenFlowCookie, types.V4OVNMasqueradeIP, OVNMasqCTZone))
+				defaultOpenFlowCookie, ofportHost, types.V4OVNMasqueradeIP, OVNMasqCTZone))
 	}
 	if config.IPv6Mode {
 		// table 0, packets coming from pods headed externally. Commit connections
@@ -278,9 +298,9 @@ func newSharedGatewayOpenFlowManager(patchPort, macAddress, gwBridge, gwIntf str
 
 		// table 0, Reply SVC traffic from Host -> OVN, unSNAT and goto table 5
 		dftFlows = append(dftFlows,
-			fmt.Sprintf("cookie=%s, priority=500, in_port=LOCAL, ipv6, ipv6_dst=%s,"+
+			fmt.Sprintf("cookie=%s, priority=500, in_port=%s, ipv6, ipv6_dst=%s,"+
 				"actions=ct(zone=%d,nat,table=5)",
-				defaultOpenFlowCookie, types.V6OVNMasqueradeIP, OVNMasqCTZone))
+				defaultOpenFlowCookie, ofportHost, types.V6OVNMasqueradeIP, OVNMasqCTZone))
 	}
 
 	var protoPrefix string
@@ -298,9 +318,9 @@ func newSharedGatewayOpenFlowManager(patchPort, macAddress, gwBridge, gwIntf str
 
 		// table 0, Host -> OVN towards SVC, SNAT to special IP
 		dftFlows = append(dftFlows,
-			fmt.Sprintf("cookie=%s, priority=500, in_port=LOCAL, %s, %s_dst=%s,"+
+			fmt.Sprintf("cookie=%s, priority=500, in_port=%s, %s, %s_dst=%s,"+
 				"actions=ct(commit,zone=%d,nat(src=%s),table=2)",
-				defaultOpenFlowCookie, protoPrefix, protoPrefix, svcCIDR, HostMasqCTZone, masqIP))
+				defaultOpenFlowCookie, ofportHost, protoPrefix, protoPrefix, svcCIDR, HostMasqCTZone, masqIP))
 
 		// table 0, Reply hairpin traffic to host, coming from OVN, unSNAT
 		dftFlows = append(dftFlows,
@@ -350,8 +370,8 @@ func newSharedGatewayOpenFlowManager(patchPort, macAddress, gwBridge, gwIntf str
 
 	// table 1, we check to see if this dest mac is the shared mac, if so send to host
 	dftFlows = append(dftFlows,
-		fmt.Sprintf("cookie=%s, priority=10, table=1, dl_dst=%s, actions=output:LOCAL",
-			defaultOpenFlowCookie, macAddress))
+		fmt.Sprintf("cookie=%s, priority=10, table=1, dl_dst=%s, actions=output:%s",
+			defaultOpenFlowCookie, macAddress, ofportHost))
 
 	if config.IPv6Mode {
 		// REMOVEME(trozet) when https://bugzilla.kernel.org/show_bug.cgi?id=11797 is resolved
@@ -364,15 +384,15 @@ func newSharedGatewayOpenFlowManager(patchPort, macAddress, gwBridge, gwIntf str
 
 		// We send BFD traffic both on the host and in ovn
 		dftFlows = append(dftFlows,
-			fmt.Sprintf("cookie=%s, priority=13, table=1, in_port=%s, udp6, tp_dst=3784, actions=output:%s,output:LOCAL",
-				defaultOpenFlowCookie, ofportPhys, ofportPatch))
+			fmt.Sprintf("cookie=%s, priority=13, table=1, in_port=%s, udp6, tp_dst=3784, actions=output:%s,output:%s",
+				defaultOpenFlowCookie, ofportPhys, ofportPatch, ofportHost))
 	}
 
 	if config.IPv4Mode {
 		// We send BFD traffic both on the host and in ovn
 		dftFlows = append(dftFlows,
-			fmt.Sprintf("cookie=%s, priority=13, table=1, in_port=%s, udp, tp_dst=3784, actions=output:%s,output:LOCAL",
-				defaultOpenFlowCookie, ofportPhys, ofportPatch))
+			fmt.Sprintf("cookie=%s, priority=13, table=1, in_port=%s, udp, tp_dst=3784, actions=output:%s,output:%s",
+				defaultOpenFlowCookie, ofportPhys, ofportPatch, ofportHost))
 	}
 
 	// table 1, all other connections do normal processing
@@ -387,8 +407,8 @@ func newSharedGatewayOpenFlowManager(patchPort, macAddress, gwBridge, gwIntf str
 	// table 3, dispatch from OVN -> Host
 	dftFlows = append(dftFlows,
 		fmt.Sprintf("cookie=%s, table=3, "+
-			"actions=move:NXM_OF_ETH_DST[]->NXM_OF_ETH_SRC[],mod_dl_dst=%s,output:LOCAL",
-			defaultOpenFlowCookie, macAddress))
+			"actions=move:NXM_OF_ETH_DST[]->NXM_OF_ETH_SRC[],mod_dl_dst=%s,output:%s",
+			defaultOpenFlowCookie, macAddress, ofportHost))
 
 	// table 4, hairpinned pkts that need to go from OVN -> Host
 	// We need to SNAT and masquerade OVN GR IP, send to table 3 for dispatch to Host

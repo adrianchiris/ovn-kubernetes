@@ -286,3 +286,17 @@ func MatchAllIPStringFamily(isIPv6 bool, ipStrings []string) ([]string, error) {
 	}
 	return nil, fmt.Errorf("no %s IPs available", IPFamilyName(isIPv6))
 }
+
+// ParseIPs parses a list of IPs with mask and return error if any is invalid.
+func ParseIPs(cidrsString []string) ([]*net.IPNet, error) {
+	cidrs := make([]*net.IPNet, 0, len(cidrsString))
+	for _, cidrString := range cidrsString {
+		ip, cidr, err := net.ParseCIDR(cidrString)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse cidr value:%q with error:%v", cidrString, err)
+		}
+		cidr.IP = ip
+		cidrs = append(cidrs, cidr)
+	}
+	return cidrs, nil
+}
