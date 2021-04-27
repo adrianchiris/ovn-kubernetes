@@ -280,6 +280,8 @@ type GatewayConfig struct {
 	V4JoinSubnet string `gcfg:"v4-join-subnet"`
 	// V6JoinSubnet to be used in the cluster
 	V6JoinSubnet string `gcfg:"v6-join-subnet"`
+	// RouterSubnet is the subnet to be used for the GR external port. auto-detected if not given.
+	RouterSubnet string `gcfg:"router-subnet"`
 }
 
 // OvnAuthConfig holds client authentication and location details for
@@ -325,10 +327,6 @@ type HybridOverlayConfig struct {
 type OvnKubeNodeConfig struct {
 	Mode           string `gcfg:"mode"`
 	MgmtPortNetdev string `gcfg:"mgmt-port-netdev"`
-	// Smart-NIC Host PF information
-	HostPfMacAddr	net.HardwareAddr
-	HostPfIpAddr	[]*net.IPNet
-	HostPfRep		string
 }
 
 // OvnDBScheme describes the OVN database connection transport method
@@ -905,6 +903,13 @@ var OVNGatewayFlags = []cli.Flag{
 		Usage:       "The v6 join subnet used for assigning join switch IPv6 addresses",
 		Destination: &cliConfig.Gateway.V6JoinSubnet,
 		Value:       Gateway.V6JoinSubnet,
+	},
+	&cli.StringFlag{
+		Name:        "gateway-router-subnet",
+		Usage:       "The Subnet to be used for the gateway router external port (shared mode only). " +
+			"auto-detected if not given",
+		Destination: &cliConfig.Gateway.RouterSubnet,
+		Value:       Gateway.RouterSubnet,
 	},
 	// Deprecated CLI options
 	&cli.BoolFlag{
@@ -1820,29 +1825,6 @@ func buildOvnKubeNodeConfig(ctx *cli.Context, cli, file *config) error {
 		}
 	}
 
-	// Adrianc: This is a Hack, we need to derrive host IP and mac in other way
-	// These are all Smart-NIC Gateway configs
-	if OvnKubeNode.Mode == types.NodeModeSmartNIC {
-		var mac, ipcidr string
-		if Default.EncapIP == "10.55.55.101" {
-			mac = "0c:42:a1:de:cf:7c"
-			ipcidr = "10.55.55.11/24"
-		}
-		if Default.EncapIP == "10.55.55.102" {
-			mac = "0c:42:a1:c6:cf:7c"
-			ipcidr = "10.55.55.12/24"
-		}
-		var err error
-		OvnKubeNode.HostPfMacAddr, err = net.ParseMAC(mac)
-		if err != nil {
-			klog.Errorf("Failed to parse MAC addr %s", mac)
-		}
-		OvnKubeNode.HostPfIpAddr, err = parseIPs([]string{ipcidr})
-		if err != nil {
-			klog.Errorf("Failed to parse IP addr CIDR %s", ipcidr)
-		}
-		OvnKubeNode.HostPfRep = "pf0hpf"
-	}
 	return nil
 }
 

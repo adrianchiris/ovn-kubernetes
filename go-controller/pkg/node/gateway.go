@@ -167,7 +167,7 @@ func (g *gateway) Run(stopChan <-chan struct{}, wg *sync.WaitGroup) {
 	}
 }
 
-func gatewayInitInternal(nodeName, gwIntf string, subnets []*net.IPNet, gwNextHops []net.IP, nodeAnnotator kube.Annotator) (
+func gatewayInitInternal(nodeName, gwIntf string, subnets []*net.IPNet, gwNextHops []net.IP,  gwIPs []*net.IPNet, nodeAnnotator kube.Annotator) (
 	string, string, net.HardwareAddr, []*net.IPNet, error) {
 
 	var bridgeName string
@@ -224,25 +224,19 @@ func gatewayInitInternal(nodeName, gwIntf string, subnets []*net.IPNet, gwNextHo
 		return bridgeName, uplinkName, nil, nil, err
 	}
 
-	// Adrianc: use host mac address and IP
 	if config.OvnKubeNode.Mode == types.NodeModeSmartNIC {
-		// swap IPs and MAC with host IP an mac
-		macAddress = config.OvnKubeNode.HostPfMacAddr
-		ips = config.OvnKubeNode.HostPfIpAddr
+		// for smart-NIC we use the host IP/subnet provided by gwIPs
+		// as well as the host MAC address for the Gateway configuration
+		ips = gwIPs
+		hostRep, err := util.GetSmartNICHostInterface(bridgeName)
+		if err != nil {
+			return bridgeName, uplinkName, nil, nil, err
+		}
+		macAddress, err = util.GetSriovnetOps().GetRepresentorMacAddress(hostRep)
+		if err != nil {
+			return bridgeName, uplinkName, nil, nil, err
+		}
 	}
-
-	//TODO: remove this its just for logging
-	gwConfig := util.L3GatewayConfig{
-		Mode:           config.GatewayModeShared,
-		ChassisID:      chassisID,
-		InterfaceID:    ifaceID,
-		MACAddress:     macAddress,
-		IPAddresses:    ips,
-		NextHops:       gwNextHops,
-		NodePortEnable: config.Gateway.NodeportEnable,
-		VLANID:         &config.Gateway.VLANID,
-	}
-	klog.Info("GW config: %v", gwConfig)
 
 	err = util.SetL3GatewayConfig(nodeAnnotator, &util.L3GatewayConfig{
 		Mode:           config.GatewayModeShared,

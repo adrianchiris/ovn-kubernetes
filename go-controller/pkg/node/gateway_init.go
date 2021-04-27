@@ -3,6 +3,7 @@ package node
 import (
 	"fmt"
 	"net"
+	"os"
 	"strings"
 
 	"k8s.io/klog/v2"
@@ -157,16 +158,73 @@ func getGatewayNextHops() ([]net.IP, string, error) {
 	return gatewayNextHops, gatewayIntf, nil
 }
 
+// getSmartNICHostPrimaryIPAdresses returns the smart-nic host IP/Network based on K8s Node IP
+// and Smart-NIC IP subnet overriden by config config.Gateway.RouterSubnet
+func getSmartNICHostPrimaryIPAdresses(k8sNodeIP net.IP, ifAddrs []*net.IPNet) ([]*net.IPNet, error) {
+	var gwIps []*net.IPNet
+	var overrideMask *net.IPMask
+	isIPv4 := utilnet.IsIPv4(k8sNodeIP)
+
+	// override subnet mask via config
+	if config.Gateway.RouterSubnet != "" {
+		_, subnet, err := net.ParseCIDR(config.Gateway.RouterSubnet)
+		if err != nil {
+			return nil, err
+		}
+		if utilnet.IsIPv4CIDR(subnet) != isIPv4 {
+			return nil, fmt.Errorf("unexpected gateway router subnet provided (%s). " +
+				"does not match Node IP address format", config.Gateway.RouterSubnet)
+		}
+		overrideMask = &subnet.Mask
+	}
+
+	for _, addr := range ifAddrs {
+		if utilnet.IsIPv4CIDR(addr) != isIPv4 {
+			continue
+		}
+		newAddr := *addr
+		newAddr.IP = k8sNodeIP
+		if overrideMask != nil {
+			newAddr.Mask = *overrideMask
+		}
+		gwIps = append(gwIps, &newAddr)
+	}
+	return gwIps, nil
+}
+
+// configureSvcRouteViaInterface routes svc traffic through the provided interface
+func configureSvcRouteViaInterface(iface string, gwIPs []net.IP) error {
+	link, err := util.LinkSetUp(iface)
+	if err != nil {
+		return fmt.Errorf("unable to get link for %s, error: %v", iface, err)
+	}
+
+	for _, subnet := range config.Kubernetes.ServiceCIDRs {
+		gwIP, err := util.MatchIPFamily(utilnet.IsIPv6CIDR(subnet), gwIPs)
+		if err != nil {
+			return fmt.Errorf("unable to find gateway IP for subnet: %v, found IPs: %v", subnet, gwIPs)
+		}
+		err = util.LinkRoutesAdd(link, gwIP[0], []*net.IPNet{subnet})
+		if err != nil && !os.IsExist(err) {
+			return fmt.Errorf("unable to add route for service via %s, error: %v", iface, err)
+		}
+	}
+	return nil
+}
+
 func (n *OvnNode) initGateway(subnets []*net.IPNet, nodeAnnotator kube.Annotator,
-	waiter *startupWaiter, managementPortConfig *managementPortConfig) error {
+	waiter *startupWaiter, managementPortConfig *managementPortConfig, nodeIP net.IP) error {
 	klog.Info("Initializing Gateway Functionality")
 	var err error
+	var ifAddrs []*net.IPNet
 
 	var loadBalancerHealthChecker *loadBalancerHealthChecker
 	var portClaimWatcher *portClaimWatcher
 
 	if config.Gateway.NodeportEnable {
-		loadBalancerHealthChecker = newLoadBalancerHealthChecker(n.name)
+		if config.OvnKubeNode.Mode == types.NodeModeFull {
+			loadBalancerHealthChecker = newLoadBalancerHealthChecker(n.name)
+		}
 		portClaimWatcher, err = newPortClaimWatcher(n.recorder)
 		if err != nil {
 			return err
@@ -178,21 +236,23 @@ func (n *OvnNode) initGateway(subnets []*net.IPNet, nodeAnnotator kube.Annotator
 		return err
 	}
 
-	ifAddrs, err := getNetworkInterfaceIPAddresses(gatewayIntf)
+	ifAddrs, err = getNetworkInterfaceIPAddresses(gatewayIntf)
 	if err != nil {
 		return err
 	}
 
-	// Adrianc: Replace Network interface addresses with host addresses
-	// todo: this needs to be sorted per ipv4/6
+	// For smart-NIC need to use the host IP addr which currently is assumed to be K8s Node cluster
+	// internal IP address.
 	if config.OvnKubeNode.Mode == types.NodeModeSmartNIC {
-		klog.Infof("Node Primary IP before replace: %v", ifAddrs)
-		ifAddrs = config.OvnKubeNode.HostPfIpAddr
-		klog.Infof("Node Primary IP after replace: %v", ifAddrs)
+		ifAddrs, err = getSmartNICHostPrimaryIPAdresses(nodeIP, ifAddrs)
+		if err != nil {
+			return err
+		}
 	}
 
 	v4IfAddr, _ := util.MatchIPNetFamily(false, ifAddrs)
 	v6IfAddr, _ := util.MatchIPNetFamily(true, ifAddrs)
+
 	if err := util.SetNodePrimaryIfAddr(nodeAnnotator, v4IfAddr, v6IfAddr); err != nil {
 		klog.Errorf("Unable to set primary IP net label on node, err: %v", err)
 	}
@@ -204,7 +264,7 @@ func (n *OvnNode) initGateway(subnets []*net.IPNet, nodeAnnotator kube.Annotator
 		gw, err = newLocalGateway(n.name, subnets, gatewayNextHops, gatewayIntf, nodeAnnotator, n.recorder, managementPortConfig)
 	case config.GatewayModeShared:
 		klog.Info("Preparing Shared Gateway")
-		gw, err = newSharedGateway(n.name, subnets, gatewayNextHops, gatewayIntf, nodeAnnotator)
+		gw, err = newSharedGateway(n.name, subnets, gatewayNextHops, gatewayIntf, ifAddrs, nodeAnnotator)
 	case config.GatewayModeDisabled:
 		var chassisID string
 		klog.Info("Gateway Mode is disabled")
@@ -239,6 +299,51 @@ func (n *OvnNode) initGateway(subnets []*net.IPNet, nodeAnnotator kube.Annotator
 	}
 
 	waiter.AddWait(gw.readyFunc, initGw)
+	n.gateway = gw
+	return err
+}
+
+func (n *OvnNode) initGatewaySmartNicHost() error {
+	// A smart NIC host gateway is complementary to the shared gateway running
+	// on the Smart-NIC embedded CPU. it performs some initializations and
+	// watch on services for iptable rule updates and run a loadBalancerHealth checker
+	// Note: all K8s Node related annotations are handled from Smart-NIC.
+	klog.Info("Initializing Shared Gateway Functionality on Smart-NIC host")
+	var err error
+
+	if config.OvnKubeNode.Mode != types.NodeModeSmartNICHost || config.Gateway.Mode != config.GatewayModeShared {
+		return fmt.Errorf("smart-nic gateway is only supported for shared gateway mode running on the" +
+			"smart-nic host")
+	}
+	// TODO(adrianc): FIXME
+	config.Gateway.Interface = "ens1f0"
+
+	gatewayNextHops, gatewayIntf, err := getGatewayNextHops()
+	if err != nil {
+		return err
+	}
+
+	err = addMasqueradeRoutes(gatewayIntf, gatewayNextHops)
+	if err != nil {
+		return err
+	}
+
+	err = configureSvcRouteViaInterface(gatewayIntf, gatewayNextHops)
+	if err != nil {
+		return err
+	}
+
+	gw := &gateway{
+		initFunc:  func() error { return nil },
+		readyFunc: func() (bool, error) { return true, nil },
+	}
+
+	if config.Gateway.NodeportEnable {
+		gw.nodePortWatcher = newNodePortWatcherIptables()
+		gw.loadBalancerHealthChecker = newLoadBalancerHealthChecker(n.name)
+	}
+
+	err = gw.Init(n.watchFactory)
 	n.gateway = gw
 	return err
 }

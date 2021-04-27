@@ -285,3 +285,16 @@ func ParseNodePrimaryIfAddr(node *kapi.Node) (string, string, error) {
 func GetNodeEgressLabel() string {
 	return ovnNodeEgressLabel
 }
+
+func GetNodeAddress(node *kapi.Node) (net.IP, error){
+	for _, nAddr := range node.Status.Addresses {
+		if nAddr.Type == kapi.NodeInternalIP {
+			ip :=  net.ParseIP(nAddr.Address)
+			if ip == nil {
+				return nil, fmt.Errorf("failed to parse k8s node object IP address")
+			}
+			return ip, nil
+		}
+	}
+	return nil, fmt.Errorf("failed to get k8s node object internal IP address")
+}
