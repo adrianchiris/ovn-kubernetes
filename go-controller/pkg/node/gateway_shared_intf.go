@@ -626,7 +626,7 @@ func newNodePortWatcher(patchPort, gwBridge, gwIntf string, ofm *openflowManager
 		if err := initSharedGatewayIPTables(); err != nil {
 			return nil, err
 		}
-		iptablesWatcher = &nodePortWatcherIptables{}
+		iptablesWatcher = newNodePortWatcherIptables()
 	}
 
 	npw := &nodePortWatcher{

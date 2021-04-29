@@ -192,6 +192,27 @@ func getSmartNICHostPrimaryIPAdresses(k8sNodeIP net.IP, ifAddrs []*net.IPNet) ([
 	return gwIps, nil
 }
 
+// getInterfaceByIP retrieves Interface that has `ip` assigned to it
+func getInterfaceByIP(ip net.IP) (string, error){
+	links, err := util.GetNetLinkOps().LinkList()
+	if err != nil {
+		return "", fmt.Errorf("failed to list network devices in the system. %v", err)
+	}
+
+	for _, link := range links {
+		ips, err := util.GetNetworkInterfaceIPs(link.Attrs().Name)
+		if err != nil {
+			return "", err
+		}
+		for _, netdevIp := range ips {
+			if netdevIp.Contains(ip) {
+				return link.Attrs().Name, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("failed to find network interface with IP: %s", ip)
+}
+
 // configureSvcRouteViaInterface routes svc traffic through the provided interface
 func configureSvcRouteViaInterface(iface string, gwIPs []net.IP) error {
 	link, err := util.LinkSetUp(iface)
@@ -303,7 +324,7 @@ func (n *OvnNode) initGateway(subnets []*net.IPNet, nodeAnnotator kube.Annotator
 	return err
 }
 
-func (n *OvnNode) initGatewaySmartNicHost() error {
+func (n *OvnNode) initGatewaySmartNicHost(nodeIP net.IP) error {
 	// A smart NIC host gateway is complementary to the shared gateway running
 	// on the Smart-NIC embedded CPU. it performs some initializations and
 	// watch on services for iptable rule updates and run a loadBalancerHealth checker
@@ -315,8 +336,13 @@ func (n *OvnNode) initGatewaySmartNicHost() error {
 		return fmt.Errorf("smart-nic gateway is only supported for shared gateway mode running on the" +
 			"smart-nic host")
 	}
-	// TODO(adrianc): FIXME
-	config.Gateway.Interface = "ens1f0"
+
+	// Force gateway interface to be the interface associated with nodeIP
+	gwIntf, err := getInterfaceByIP(nodeIP)
+	if err != nil {
+		return err
+	}
+	config.Gateway.Interface = gwIntf
 
 	gatewayNextHops, gatewayIntf, err := getGatewayNextHops()
 	if err != nil {
@@ -339,6 +365,9 @@ func (n *OvnNode) initGatewaySmartNicHost() error {
 	}
 
 	if config.Gateway.NodeportEnable {
+		if err := initSharedGatewayIPTables(); err != nil {
+			return err
+		}
 		gw.nodePortWatcher = newNodePortWatcherIptables()
 		gw.loadBalancerHealthChecker = newLoadBalancerHealthChecker(n.name)
 	}

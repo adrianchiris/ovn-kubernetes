@@ -268,6 +268,11 @@ func (n *OvnNode) Start(wg *sync.WaitGroup) error {
 		return fmt.Errorf("error retrieving node %s: %v", n.name, err)
 	}
 
+	nodeAddr, err := util.GetNodeAddress(node)
+	if err != nil {
+		return err
+	}
+
 	if config.OvnKubeNode.Mode != types.NodeModeSmartNICHost {
 		for _, auth := range []config.OvnAuthConfig{config.OvnNorth, config.OvnSouth} {
 			if err := auth.SetDBAuth(); err != nil {
@@ -328,7 +333,7 @@ func (n *OvnNode) Start(wg *sync.WaitGroup) error {
 		}
 		klog.Infof("Management port ready.")
 		// Initialize gateway
-		err = n.initGatewaySmartNicHost()
+		err = n.initGatewaySmartNicHost(nodeAddr)
 		if err != nil {
 			return err
 		}
@@ -347,10 +352,6 @@ func (n *OvnNode) Start(wg *sync.WaitGroup) error {
 		}
 
 		// Initialize gateway resources on the node
-		nodeAddr, err := util.GetNodeAddress(node)
-		if err != nil {
-			return err
-		}
 		if err := n.initGateway(subnets, nodeAnnotator, waiter, mgmtPortConfig, nodeAddr); err != nil {
 			return err
 		}

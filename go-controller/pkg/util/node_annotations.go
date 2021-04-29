@@ -286,6 +286,7 @@ func GetNodeEgressLabel() string {
 	return ovnNodeEgressLabel
 }
 
+// GetNodeAddress returns the Node's Cluster internal IP address
 func GetNodeAddress(node *kapi.Node) (net.IP, error){
 	for _, nAddr := range node.Status.Addresses {
 		if nAddr.Type == kapi.NodeInternalIP {

@@ -3,19 +3,9 @@
 package util
 
 import (
-	"fmt"
-	"github.com/Mellanox/sriovnet"
 	"net"
-)
 
-// TODO:(Adrianc) use consts from sriovnet lib
-const (
-	PORT_FLAVOUR_PHYSICAL = iota
-	_
-	_
-	PORT_FLAVOUR_PCI_PF
-	PORT_FLAVOUR_PCI_VF
-	PORT_FLAVOUR_UNKNOWN = 0xffff
+	"github.com/Mellanox/sriovnet"
 )
 
 type PortFlavour int
@@ -28,7 +18,7 @@ type SriovnetOps interface {
 	GetPfPciFromVfPci(vfPciAddress string) (string, error)
 	GetVfRepresentorSmartNIC(pfID, vfIndex string) (string, error)
 	GetRepresentorMacAddress(netdev string) (net.HardwareAddr, error)
-	GetRepresentorPortFlavour(netdev string) (PortFlavour, error)
+	GetRepresentorPortFlavour(netdev string) (sriovnet.PortFlavour, error)
 }
 
 type defaultSriovnetOps struct {
@@ -72,15 +62,9 @@ func (defaultSriovnetOps) GetVfRepresentorSmartNIC(pfID, vfIndex string) (string
 
 // TODO:(adrianc) replace with sriovnet impl once merged and dependency updated.
 func (defaultSriovnetOps) GetRepresentorMacAddress(netdev string) (net.HardwareAddr, error) {
-	if netdev == "pf0hpf" {
-		return net.ParseMAC("0c:42:a1:c6:cf:7c")
-	}
-	return nil, fmt.Errorf("unexpected netdev")
+	return sriovnet.GetRepresentorMacAddress(netdev)
 }
 
-func (defaultSriovnetOps) GetRepresentorPortFlavour(netdev string) (PortFlavour, error) {
-	if netdev == "pf0hpf" {
-		return PORT_FLAVOUR_PCI_PF, nil
-	}
-	return PORT_FLAVOUR_UNKNOWN, nil
+func (defaultSriovnetOps) GetRepresentorPortFlavour(netdev string) (sriovnet.PortFlavour, error) {
+	return sriovnet.GetRepresentorPortFlavour(netdev)
 }

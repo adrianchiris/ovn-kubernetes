@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/Mellanox/sriovnet"
 	"github.com/vishvananda/netlink"
 	"k8s.io/klog/v2"
 )
@@ -357,7 +358,7 @@ func GetSmartNICHostInterface(bridgeName string) (string, error) {
 
 			}
 			flavor, err := GetSriovnetOps().GetRepresentorPortFlavour(stdout)
-			if err == nil && flavor == PORT_FLAVOUR_PCI_PF {
+			if err == nil && flavor == sriovnet.PORT_FLAVOUR_PCI_PF {
 				// host representor interface found
 				return stdout, nil
 			}
