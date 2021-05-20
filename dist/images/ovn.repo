@@ -1,0 +1,7 @@
+[ovn-sdn-L1-Artifactory]
+name=ovn-sdn-L1-Artifactory
+baseurl=https://sdn_ro:AKCp8jQ8jd4eQHH3GK5Txrxz3cPczwkC96GdZ8vJYmMNU1PvmBJvhR6HDs9ij8JQLVnW6mnv6@edge.urm.nvidia.com/artifactory/sw-ngn-sdn-rpm/ovn/sdn-L1/8/x86_64/
+enabled=1
+gpgcheck=0
+
+
