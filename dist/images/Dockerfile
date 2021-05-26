@@ -5,7 +5,7 @@ USER root
 ENV PYTHONDONTWRITEBYTECODE yes
 
 # Get openvswitch from Nvidia controlled source
-# Based on nv OVS commit: f38d2267
+# Based on nv OVS commit: b2cdf89e
 # Based on nv OVN commit: 8e75d275
 
 ARG OVS_REPO=ovs.repo
