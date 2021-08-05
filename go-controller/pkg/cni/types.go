@@ -41,7 +41,7 @@ type PodInterfaceInfo struct {
 	Ingress            int64  `json:"ingress"`
 	Egress             int64  `json:"egress"`
 	CheckExtIDs        bool   `json:"check-external-ids"`
-	IsSmartNICHostMode bool   `json:"is-smartnic-host-mode"`
+	IsDPUHostMode      bool   `json:"is-dpu-host-mode"`
 	PodUID             string `json:"pod-uid"`
 	VfNetdevNmae       string `json:"vf-netdev-name"`
 	NadName            string `json:"nadName"`
