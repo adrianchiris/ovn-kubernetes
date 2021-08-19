@@ -98,23 +98,10 @@ rules:
   - icmpnetworkpolicies
   verbs: ["get", "list", "watch"]
 - apiGroups:
-  - authentication.k8s.io
-  resources:
-  - tokenreviews
-  verbs:
-  - create
-- apiGroups:
-  - authorization.k8s.io
-  resources:
-  - subjectaccessreviews
-  verbs:
-  - create
-- apiGroups:
   - k8s.cni.cncf.io
   resources:
   - multi-networkpolicies
   verbs: ["list", "get", "watch"]
-
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
