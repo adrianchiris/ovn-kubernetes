@@ -16,6 +16,8 @@ copy $OVN_REPO /etc/yum.repos.d/
 
 
 ARG K8S_VER
+ARG OVS_VER
+ARG OVN_VER
 
 COPY kubernetes.repo /etc/yum.repos.d/kubernetes.repo
 # install epel.repo
@@ -27,7 +29,7 @@ RUN INSTALL_PKGS=" \
 	yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False $INSTALL_PKGS && \
     yum -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False update && \
     yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False \
-        kubectl$K8S_VER openvswitch openvswitch-devel ovn ovn-host ovn-central && \
+        kubectl$K8S_VER openvswitch$OVS_VER openvswitch-devel$OVS_VER ovn$OVN_VER ovn-host$OVN_VER ovn-central$OVN_VER && \
     yum autoremove -y && \
     yum clean all && rm -rf /var/cache/dnf/*
 
