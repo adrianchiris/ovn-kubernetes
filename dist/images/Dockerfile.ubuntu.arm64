@@ -8,17 +8,21 @@
 #
 # So this file will change over time.
 
-FROM ubuntu:19.10
+FROM ubuntu:20.04
 
 USER root
 
-RUN apt-get update && apt-get install -y iproute2 curl software-properties-common util-linux
+RUN apt-get update && apt-get install -y arping firewalld iproute2 curl \
+    software-properties-common util-linux apt-transport-https
 
-RUN echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee -a /etc/apt/sources.list.d/kubernetes.list
+# Get ovn from Nvidia controlled source
+RUN echo "deb [trusted=yes] https://sdn_ro:AKCp8jQwj6F1ZZZ8QuN26n3bVcvgYRHEns5aQZDeNsi3PE2f6nQ3YJpEYgxGqbhYcpyCU6bHy@edge.urm.nvidia.com/artifactory/sw-ngn-sdn-debian focal main" | tee -a /etc/apt/sources.list.d/ngn-sdn-ovn.list
+RUN curl -H 'X-JFrog-Art-Api:AKCp8jQwj6F1ZZZ8QuN26n3bVcvgYRHEns5aQZDeNsi3PE2f6nQ3YJpEYgxGqbhYcpyCU6bHy' -L edge.urm.nvidia.com/artifactory/api/gpg/key/public | apt-key add -
+RUN echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list
 RUN curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
 
 # Install OVS and OVN packages.
-RUN apt-get update && apt-get install -y openvswitch-switch openvswitch-common ovn-central ovn-common ovn-host kubectl
+RUN apt-get update && apt-get install -y openvswitch-switch openvswitch-common ovn-common ovn-host kubectl=1.21.1-00
 
 RUN mkdir -p /var/run/openvswitch
 
@@ -38,16 +42,9 @@ COPY ovn_k8s.conf /etc/openvswitch/ovn_k8s.conf
 # copy git commit number into image
 COPY git_info /root
 
-# iptables wrappers
-COPY ./iptables-scripts/iptables /usr/sbin/
-COPY ./iptables-scripts/iptables-save /usr/sbin/
-COPY ./iptables-scripts/iptables-restore /usr/sbin/
-COPY ./iptables-scripts/ip6tables /usr/sbin/
-COPY ./iptables-scripts/ip6tables-save /usr/sbin/
-COPY ./iptables-scripts/ip6tables-restore /usr/sbin/
-
 LABEL io.k8s.display-name="ovn kubernetes" \
-      io.k8s.description="ovnkube ubuntu image"
+      io.k8s.description="ovnkube ubuntu image" \
+      maintainer="Girish Moodalbail <gmoodalbail@nvidia.com>"
 
 WORKDIR /root
 ENTRYPOINT /root/ovnkube.sh
