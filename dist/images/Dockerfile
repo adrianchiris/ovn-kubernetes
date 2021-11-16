@@ -19,11 +19,13 @@ ARG K8S_VER
 ARG OVS_VER
 ARG OVN_VER
 
+# firewall-cmd wrappers
+COPY ./iptables-scripts/firewall-cmd /usr/bin/
 COPY kubernetes.repo /etc/yum.repos.d/kubernetes.repo
 # install epel.repo
 RUN yum install -y epel-release
 RUN INSTALL_PKGS=" \
-	bind-utils procps-ng openssl numactl-libs firewalld firewalld-filesystem \
+	bind-utils procps-ng openssl numactl-libs \
 	libpcap iproute iputils strace socat unbound-libs python2 \
         " && \
 	yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False $INSTALL_PKGS && \
